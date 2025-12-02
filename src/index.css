@@ -1,0 +1,84 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Oswald:wght@400;500;600;700&display=swap');
+
+* {
+  @apply box-border;
+}
+
+html {
+  @apply scroll-smooth;
+}
+
+body {
+  @apply bg-zinc-950 text-white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  @apply w-2 h-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-zinc-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-700 rounded-full hover:bg-zinc-600;
+}
+
+/* Custom color utilities */
+.text-red-angels {
+  color: #ba0021;
+}
+
+.bg-red-angels {
+  background-color: #ba0021;
+}
+
+/* Animation classes */
+@keyframes shimmer {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* Form inputs */
+input, textarea, select {
+  @apply bg-zinc-800 border border-zinc-700 text-white rounded-lg px-3 py-2;
+}
+
+input:focus, textarea:focus, select:focus {
+  @apply outline-none border-red-600 bg-zinc-800/50;
+}
+
+/* Buttons */
+button {
+  @apply transition-all duration-200;
+}
+
+/* Badge styling */
+.badge {
+  @apply inline-block px-2 py-1 rounded text-xs font-semibold;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/50 backdrop-blur-sm;
+}
+
+/* Calendar grid */
+.calendar-grid {
+  @apply grid grid-cols-7 gap-px bg-zinc-800;
+}
+
+.calendar-cell {
+  @apply bg-zinc-900 aspect-square p-2;
+}

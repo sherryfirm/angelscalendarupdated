@@ -1,0 +1,747 @@
+import React, { useState, useEffect } from 'react';
+import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, Cake } from 'lucide-react';
+import { db } from './firebase';
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { initialCalendarItems } from './initialData';
+
+const SportsEditorialCalendar = () => {
+  const [currentMonth, setCurrentMonth] = useState(1);
+  const [currentYear, setCurrentYear] = useState(2026);
+  const [editingItem, setEditingItem] = useState(null);
+  const [viewMode, setViewMode] = useState('month');
+  const [addMode, setAddMode] = useState('single');
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [csvInput, setCsvInput] = useState('');
+  const [calendarItems, setCalendarItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  
+  // NEW: State for day expansion modal
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [showDayModal, setShowDayModal] = useState(false);
+  
+  // Firebase real-time listener
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'calendarItems'), (snapshot) => {
+      const items = snapshot.docs.map(d => {
+        const data = d.data();
+        return { ...data, id: d.id };
+      });
+      setCalendarItems(items);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+  
+  // Seed database with initial data (chunked upload)
+  const seedDatabase = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    
+    try {
+      const totalItems = initialCalendarItems.length;
+      let uploaded = 0;
+      
+      // Upload in chunks of 50
+      const chunkSize = 50;
+      for (let i = 0; i < totalItems; i += chunkSize) {
+        const chunk = initialCalendarItems.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        
+        chunk.forEach((item) => {
+          const docRef = doc(collection(db, 'calendarItems'));
+          const { id, ...itemData } = item;
+          batch.set(docRef, itemData);
+        });
+        
+        await batch.commit();
+        uploaded += chunk.length;
+        console.log(`Uploaded ${uploaded}/${totalItems} items`);
+      }
+      
+      alert(`Successfully loaded ${totalItems} calendar items!`);
+    } catch (error) {
+      console.error('Error seeding database:', error);
+      alert('Error loading schedule. Please try again.');
+    }
+    
+    setSyncing(false);
+  };
+  
+  const [newItem, setNewItem] = useState({
+    date: '',
+    type: 'content',
+    title: '',
+    assignees: [],
+    status: 'planned',
+    notes: '',
+    links: ''
+  });
+
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  // Updated type options with birthday category
+  const typeOptions = [
+    { value: 'home', label: 'HOME', color: '#ba0021' },
+    { value: 'away', label: 'AWAY', color: '#666666' },
+    { value: 'content', label: 'CONTENT', color: '#eab308' },
+    { value: 'event', label: 'EVENT', color: '#003263' },
+    { value: 'promo', label: 'PROMO', color: '#862633' },
+    { value: 'birthday', label: 'BIRTHDAY', color: '#ec4899' },
+    { value: 'cityconnect', label: 'CITY CONNECT', color: '#f5f1e8' }
+  ];
+
+  const statusOptions = ['planned', 'in-progress', 'review', 'completed'];
+
+  const getDaysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (month, year) => new Date(year, month, 1).getDay();
+
+  const getItemsForDate = (day) => {
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return calendarItems.filter(item => item.date === dateStr);
+  };
+
+  const handleAddItem = async () => {
+    if (newItem.date && newItem.title) {
+      try {
+        if (editingItem) {
+          await updateDoc(doc(db, 'calendarItems', editingItem.id), newItem);
+          setEditingItem(null);
+        } else {
+          await addDoc(collection(db, 'calendarItems'), { ...newItem, id: Date.now() });
+        }
+        setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '' });
+        setShowImportModal(false);
+      } catch (error) {
+        console.error('Error saving item:', error);
+        alert('Error saving item. Please try again.');
+      }
+    }
+  };
+
+  const handleEdit = (item) => {
+    setEditingItem(item);
+    setNewItem(item);
+    setShowImportModal(true);
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'calendarItems', id));
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      alert('Error deleting item. Please try again.');
+    }
+  };
+
+  const teamAbbreviations = {
+    'Dodgers': 'LAD', 'Diamondbacks': 'ARI', 'Rangers': 'TEX', 'Giants': 'SF',
+    'Rockies': 'COL', 'Padres': 'SD', 'Cubs': 'CHC', 'Reds': 'CIN',
+    'Royals': 'KC', 'Mariners': 'SEA', 'Athletics': 'OAK', 'Guardians': 'CLE',
+    'Brewers': 'MIL', 'White Sox': 'CWS', 'Astros': 'HOU', 'Braves': 'ATL',
+    'Yankees': 'NYY', 'Blue Jays': 'TOR', 'Mets': 'NYM', 'Tigers': 'DET',
+    'Rays': 'TB', 'Orioles': 'BAL', 'Red Sox': 'BOS', 'Twins': 'MIN',
+    'Cardinals': 'STL', 'Marlins': 'MIA', 'Phillies': 'PHI', 'Pirates': 'PIT',
+    'Nationals': 'WSH', 'Italy': 'ITA'
+  };
+
+  const handleImportCSV = async () => {
+    try {
+      const lines = csvInput.trim().split('\n');
+      const newItems = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const [date, time, homeAway, opponent, location] = line.split(',').map(s => s.trim());
+        
+        if (date && opponent) {
+          const opponentAbbr = teamAbbreviations[opponent] || opponent;
+          
+          newItems.push({
+            id: Date.now() + i + Math.random(),
+            date: date,
+            type: 'game',
+            title: `${homeAway.toLowerCase() === 'away' ? '@' : 'vs'} ${opponentAbbr}`,
+            assignees: [],
+            status: 'planned',
+            notes: `${time ? time + ' - ' : ''}${location || ''}`,
+            links: ''
+          });
+        }
+      }
+      
+      // Add all items to Firebase
+      for (const item of newItems) {
+        await addDoc(collection(db, 'calendarItems'), item);
+      }
+      
+      setCsvInput('');
+      setShowImportModal(false);
+      alert(`Successfully imported ${newItems.length} games!`);
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      alert('Error importing CSV. Please check the format.');
+    }
+  };
+
+  const toggleAssignee = (name) => {
+    const assignees = newItem.assignees.includes(name)
+      ? newItem.assignees.filter(a => a !== name)
+      : [...newItem.assignees, name];
+    setNewItem({ ...newItem, assignees });
+  };
+
+  const teamMembers = ['Liam', 'Hannah', 'Ricardo', 'Alex', 'Interns'];
+
+  // Handle clicking on a day to show modal with all events
+  const handleDayClick = (day, items) => {
+    if (items.length > 0) {
+      setSelectedDay({
+        day,
+        date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        items
+      });
+      setShowDayModal(true);
+    }
+  };
+
+  // Get background and text colors for item types
+  const getItemColors = (type) => {
+    const bgColors = {
+      home: 'bg-red-600',
+      away: 'bg-zinc-600',
+      game: 'bg-red-600',
+      promo: 'bg-rose-900',
+      content: 'bg-yellow-500',
+      event: 'bg-blue-950',
+      birthday: 'bg-pink-500',
+      cityconnect: ''
+    };
+    const textColors = {
+      home: 'text-white',
+      away: 'text-white',
+      game: 'text-white',
+      promo: 'text-white',
+      content: 'text-zinc-900',
+      event: 'text-white',
+      birthday: 'text-white',
+      cityconnect: ''
+    };
+    return { bg: bgColors[type] || 'bg-gray-500', text: textColors[type] || 'text-white' };
+  };
+
+  const renderCalendarGrid = () => {
+    const daysInMonth = getDaysInMonth(currentMonth, currentYear);
+    const firstDay = getFirstDayOfMonth(currentMonth, currentYear);
+    const days = [];
+
+    for (let i = 0; i < firstDay; i++) {
+      days.push(
+        <div key={`empty-${i}`} className="min-h-24 bg-zinc-900/50 rounded-lg opacity-40"></div>
+      );
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const items = getItemsForDate(day);
+      const isToday = day === new Date().getDate() && currentMonth === new Date().getMonth() && currentYear === new Date().getFullYear();
+      const hasGame = items.some(item => item.type === 'game' || item.type === 'home' || item.type === 'away');
+      const hasBirthday = items.some(item => item.type === 'birthday');
+      
+      days.push(
+        <div 
+          key={day} 
+          className={`min-h-24 rounded-lg p-2 transition-all duration-200 hover:scale-105 cursor-pointer
+            ${isToday ? 'ring-2 ring-red-600 bg-gradient-to-br from-red-900/30 to-zinc-900' : 'bg-zinc-900 hover:bg-zinc-800'}
+            ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}
+            ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}`}
+          onClick={() => handleDayClick(day, items)}
+        >
+          <div className={`font-bold text-lg mb-1 flex items-center gap-1 ${isToday ? 'text-red-500' : 'text-zinc-500'}`}
+               style={{ fontFamily: "'Oswald', sans-serif" }}>
+            {day}
+            {hasBirthday && <Cake size={14} className="text-pink-400" />}
+          </div>
+          <div className="flex flex-col gap-1">
+            {items.slice(0, 3).map(item => {
+              const colors = getItemColors(item.type);
+              const isCityConnect = item.type === 'cityconnect';
+              const showSmallDesc = item.type === 'home' || item.type === 'away';
+              return (
+                <div
+                  key={item.id}
+                  className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-pointer 
+                    hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0`}
+                  style={{
+                    ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
+                    fontFamily: "'Barlow Condensed', sans-serif",
+                    fontSize: '12px'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEdit(item);
+                  }}
+                  title={item.title}
+                >
+                  <span className="truncate">{item.title}</span>
+                  {showSmallDesc && item.notes && (
+                    <span className="text-[11px] text-zinc-300 truncate font-normal normal-case" style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0' }}>
+                      {item.notes}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {items.length > 3 && (
+              <div 
+                className="text-pink-400 text-xs font-semibold hover:text-pink-300 cursor-pointer" 
+                style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDayClick(day, items);
+                }}
+              >
+                +{items.length - 3} more
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return days;
+  };
+
+  // Day Modal Component - Shows all events for a selected day
+  const DayModal = () => {
+    if (!showDayModal || !selectedDay) return null;
+    
+    const dateObj = new Date(selectedDay.date + 'T12:00:00');
+    const formattedDate = dateObj.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+
+    return (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div className="bg-zinc-900 rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden border border-zinc-700 shadow-2xl">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-red-700 to-red-900 p-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                {formattedDate}
+              </h3>
+              <p className="text-red-200 text-sm">{selectedDay.items.length} event{selectedDay.items.length !== 1 ? 's' : ''}</p>
+            </div>
+            <button
+              onClick={() => setShowDayModal(false)}
+              className="text-white hover:text-red-200 transition-colors p-2"
+            >
+              <X size={24} />
+            </button>
+          </div>
+          
+          {/* Events List */}
+          <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
+            {selectedDay.items.map(item => {
+              const colors = getItemColors(item.type);
+              const isCityConnect = item.type === 'cityconnect';
+              const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
+              
+              return (
+                <div 
+                  key={item.id} 
+                  className="bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-colors group"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      {/* Type Badge */}
+                      <span 
+                        className={`${colors.bg} ${colors.text} text-xs px-2 py-1 rounded font-semibold inline-block mb-2`}
+                        style={{
+                          ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
+                          fontFamily: "'Barlow Condensed', sans-serif"
+                        }}
+                      >
+                        {typeLabel}
+                      </span>
+                      
+                      {/* Title */}
+                      <h4 className="text-white font-bold text-lg" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                        {item.title}
+                      </h4>
+                      
+                      {/* Notes */}
+                      {item.notes && (
+                        <p className="text-zinc-400 text-sm mt-1">{item.notes}</p>
+                      )}
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => {
+                          setShowDayModal(false);
+                          handleEdit(item);
+                        }}
+                        className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm('Delete this item?')) {
+                            handleDelete(item.id);
+                          }
+                        }}
+                        className="p-2 bg-zinc-700 hover:bg-red-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Footer */}
+          <div className="p-4 border-t border-zinc-700 flex justify-end">
+            <button
+              onClick={() => setShowDayModal(false)}
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg font-semibold transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-red-600 mx-auto mb-4"></div>
+          <p className="text-white text-lg">Loading calendar...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-white">
+      {/* Day Modal */}
+      <DayModal />
+      
+      {/* Header with Background */}
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-red-700/40 via-zinc-900 to-zinc-950"></div>
+        <div 
+          className="absolute inset-0 opacity-10"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+            backgroundSize: '100% auto',
+            backgroundPosition: '70% 40%'
+          }}
+        >
+        </div>
+        
+        <div className="relative z-10 p-8 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+              <img src="/logo.png" alt="Angels Logo" className="w-10 h-10 object-contain" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-black tracking-tight" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                @ANGELS CALENDAR
+              </h1>
+              <p className="text-red-300 text-sm font-semibold tracking-widest uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                2026 Season Schedule
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {calendarItems.length === 0 && (
+              <button
+                onClick={seedDatabase}
+                disabled={syncing}
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-700 
+                  hover:from-green-500 hover:to-green-600 text-white font-bold rounded-lg transition-all 
+                  shadow-lg hover:shadow-green-500/25 disabled:opacity-50"
+                style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
+              >
+                <Calendar size={18} />
+                {syncing ? 'SYNCING...' : 'LOAD SCHEDULE'}
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setEditingItem(null);
+                setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '' });
+                setShowImportModal(true);
+              }}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 
+                hover:from-red-500 hover:to-red-600 text-white font-bold rounded-lg transition-all 
+                shadow-lg hover:shadow-red-500/25"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
+            >
+              <Plus size={18} />
+              ADD ITEM
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Month Navigation */}
+      <div className="px-8 py-4 flex items-center justify-between border-b border-zinc-800">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (currentMonth === 0) {
+                setCurrentMonth(11);
+                setCurrentYear(currentYear - 1);
+              } else {
+                setCurrentMonth(currentMonth - 1);
+              }
+            }}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <h2 className="text-2xl font-bold w-48 text-center" style={{ fontFamily: "'Oswald', sans-serif" }}>
+            {months[currentMonth]} {currentYear}
+          </h2>
+          <button
+            onClick={() => {
+              if (currentMonth === 11) {
+                setCurrentMonth(0);
+                setCurrentYear(currentYear + 1);
+              } else {
+                setCurrentMonth(currentMonth + 1);
+              }
+            }}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+        
+        {/* Legend */}
+        <div className="flex items-center gap-4 flex-wrap">
+          {typeOptions.map(type => (
+            <div key={type.value} className="flex items-center gap-2">
+              <div 
+                className="w-4 h-4 rounded"
+                style={{ backgroundColor: type.color }}
+              ></div>
+              <span className="text-xs text-zinc-400 uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                {type.label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Calendar Grid */}
+      <div className="p-8">
+        <div className="grid grid-cols-7 gap-2 mb-2">
+          {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => (
+            <div key={day} className="text-center py-2 text-zinc-500 font-bold text-sm" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {day}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-2">
+          {renderCalendarGrid()}
+        </div>
+      </div>
+
+      {/* Add/Edit Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto border border-zinc-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                {editingItem ? 'EDIT ITEM' : 'ADD NEW ITEM'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowImportModal(false);
+                  setEditingItem(null);
+                }}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Mode Toggle */}
+            {!editingItem && (
+              <div className="flex gap-2 mb-6">
+                <button
+                  onClick={() => setAddMode('single')}
+                  className={`flex-1 py-2 rounded-lg font-semibold transition-all ${
+                    addMode === 'single' 
+                      ? 'bg-red-600 text-white' 
+                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  SINGLE ITEM
+                </button>
+                <button
+                  onClick={() => setAddMode('import')}
+                  className={`flex-1 py-2 rounded-lg font-semibold transition-all ${
+                    addMode === 'import' 
+                      ? 'bg-red-600 text-white' 
+                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  IMPORT CSV
+                </button>
+              </div>
+            )}
+
+            {(addMode === 'single' || editingItem) ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>DATE</label>
+                  <input
+                    type="date"
+                    value={newItem.date}
+                    onChange={(e) => setNewItem({ ...newItem, date: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TYPE</label>
+                  <div className="flex flex-wrap gap-2">
+                    {typeOptions.map(type => (
+                      <button
+                        key={type.value}
+                        onClick={() => setNewItem({ ...newItem, type: type.value })}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                          newItem.type === type.value 
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' 
+                            : 'opacity-60 hover:opacity-100'
+                        }`}
+                        style={{ 
+                          backgroundColor: type.color,
+                          color: type.value === 'content' || type.value === 'cityconnect' ? '#27272a' : 'white',
+                          fontFamily: "'Barlow Condensed', sans-serif"
+                        }}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TITLE</label>
+                  <input
+                    type="text"
+                    value={newItem.title}
+                    onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Enter title..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>NOTES</label>
+                  <textarea
+                    value={newItem.notes}
+                    onChange={(e) => setNewItem({ ...newItem, notes: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 h-20 resize-none"
+                    placeholder="Additional notes..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>ASSIGNEES</label>
+                  <div className="flex flex-wrap gap-2">
+                    {teamMembers.map(member => (
+                      <button
+                        key={member}
+                        onClick={() => toggleAssignee(member)}
+                        className={`flex items-center gap-1 px-3 py-1 rounded-full text-sm transition-all ${
+                          newItem.assignees.includes(member)
+                            ? 'bg-red-600 text-white'
+                            : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        <User size={14} />
+                        {member}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>STATUS</label>
+                  <select
+                    value={newItem.status}
+                    onChange={(e) => setNewItem({ ...newItem, status: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    {statusOptions.map(status => (
+                      <option key={status} value={status}>{status.toUpperCase()}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <button
+                  onClick={handleAddItem}
+                  className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 
+                    text-white font-bold rounded-lg transition-all mt-4"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.1em' }}
+                >
+                  {editingItem ? 'UPDATE ITEM' : 'ADD ITEM'}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    PASTE CSV DATA
+                  </label>
+                  <p className="text-xs text-zinc-500 mb-2">Format: date,time,home/away,opponent,location</p>
+                  <textarea
+                    value={csvInput}
+                    onChange={(e) => setCsvInput(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500 h-40 resize-none font-mono text-sm"
+                    placeholder="date,time,home/away,opponent,location
+2026-04-03,7:07 PM,Home,Mariners,Angel Stadium"
+                  />
+                </div>
+                
+                <button
+                  onClick={handleImportCSV}
+                  className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 
+                    text-white font-bold rounded-lg transition-all"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.1em' }}
+                >
+                  IMPORT GAMES
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default SportsEditorialCalendar;

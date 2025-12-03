@@ -888,7 +888,7 @@ const SportsEditorialCalendar = () => {
                 <h3 className="text-xl font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {formattedDate}
                 </h3>
-                <p className="text-red-200 text-sm">{selectedDay.items.filter(item => item.type && item.title).length} event{selectedDay.items.filter(item => item.type && item.title).length !== 1 ? 's' : ''}</p>
+                <p className="text-red-200 text-sm">{selectedDay.items.length} item{selectedDay.items.length !== 1 ? 's' : ''}</p>
               </div>
               <button
                 onClick={() => navigateDayModal(1)}
@@ -908,7 +908,7 @@ const SportsEditorialCalendar = () => {
 
           {/* Events List */}
           <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
-            {selectedDay.items.filter(item => item.type && item.title).length === 0 ? (
+            {selectedDay.items.length === 0 ? (
               <div className="text-center py-8 text-zinc-400">
                 <p className="mb-4">No events for this day</p>
                 <button
@@ -921,7 +921,56 @@ const SportsEditorialCalendar = () => {
                 </button>
               </div>
             ) : (
-              selectedDay.items.filter(item => item.type && item.title).sort((a, b) => (a.order || 0) - (b.order || 0)).map(item => {
+              <>
+              {/* Theme-only items */}
+              {selectedDay.items.filter(item => !item.type && !item.title && item.themes?.length > 0).sort((a, b) => (a.order || 0) - (b.order || 0)).map(item => (
+                <div
+                  key={item.id}
+                  className="bg-zinc-800/50 border-2 border-dashed border-zinc-700 rounded-lg p-3 hover:bg-zinc-800 transition-all group"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-zinc-500 text-xs font-semibold uppercase">Day Theme:</span>
+                      <div className="flex gap-1">
+                        {item.themes?.map(themeValue => {
+                          const theme = themeOptions.find(t => t.value === themeValue);
+                          return theme ? (
+                            <span key={themeValue} className="text-lg" title={theme.label}>
+                              {theme.emoji}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => {
+                          setShowDayModal(false);
+                          handleEdit(item);
+                        }}
+                        className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                        title="Edit theme"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm('Delete this theme?')) {
+                            handleDelete(item.id);
+                          }
+                        }}
+                        className="p-2 bg-zinc-700 hover:bg-red-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                        title="Delete theme"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Regular items */}
+              {selectedDay.items.filter(item => item.type && item.title).sort((a, b) => (a.order || 0) - (b.order || 0)).map(item => {
                 const colors = getItemColors(item.type);
                 const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
                 const isDragging = draggedItem?.id === item.id;
@@ -1020,13 +1069,14 @@ const SportsEditorialCalendar = () => {
                     </div>
                   </div>
                 );
-              })
+              })}
+              </>
             )}
           </div>
 
           {/* Footer */}
           <div className="p-4 border-t border-zinc-700 flex justify-between gap-2">
-            {selectedDay.items.filter(item => item.type && item.title).length > 0 && (
+            {selectedDay.items.length > 0 && (
               <button
                 onClick={() => handleAddItemForDate(selectedDay.date)}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
@@ -1294,7 +1344,7 @@ const SportsEditorialCalendar = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TYPE (Optional)</label>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TYPE</label>
                   <div className="flex flex-wrap gap-2">
                     {typeOptions.map(type => (
                       <button
@@ -1315,17 +1365,16 @@ const SportsEditorialCalendar = () => {
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-zinc-500 mt-2">Click selected type to unselect. You can add just themes without a type.</p>
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TITLE {newItem.type ? '(Required)' : '(Optional)'}</label>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TITLE</label>
                   <input
                     type="text"
                     value={newItem.title}
                     onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder={newItem.type ? "Enter title..." : "Enter title (optional if adding theme only)..."}
+                    placeholder="Enter title..."
                   />
                 </div>
                 
@@ -1351,7 +1400,7 @@ const SportsEditorialCalendar = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>DAY THEMES (Optional)</label>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>DAY THEMES</label>
                   <div className="flex flex-wrap gap-2">
                     {themeOptions.map(theme => (
                       <button
@@ -1368,7 +1417,6 @@ const SportsEditorialCalendar = () => {
                       </button>
                     ))}
                   </div>
-                  <p className="text-xs text-zinc-500 mt-2">Themes appear next to the day number on the calendar</p>
                 </div>
 
                 <div>

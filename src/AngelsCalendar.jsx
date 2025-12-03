@@ -82,7 +82,7 @@ const SportsEditorialCalendar = () => {
   
   const [newItem, setNewItem] = useState({
     date: '',
-    type: 'content',
+    type: null,
     title: '',
     assignees: [],
     status: 'planned',
@@ -127,7 +127,11 @@ const SportsEditorialCalendar = () => {
   };
 
   const handleAddItem = async () => {
-    if (newItem.date && newItem.title) {
+    // Validate: require date AND (either title with type OR at least one theme)
+    const hasTypeAndTitle = newItem.type && newItem.title;
+    const hasThemes = newItem.themes && newItem.themes.length > 0;
+
+    if (newItem.date && (hasTypeAndTitle || hasThemes)) {
       try {
         if (editingItem) {
           await updateDoc(doc(db, 'calendarItems', editingItem.id), newItem);
@@ -135,12 +139,14 @@ const SportsEditorialCalendar = () => {
         } else {
           await addDoc(collection(db, 'calendarItems'), { ...newItem, id: Date.now() });
         }
-        setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
+        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
         setShowImportModal(false);
       } catch (error) {
         console.error('Error saving item:', error);
         alert('Error saving item. Please try again.');
       }
+    } else {
+      alert('Please fill in required fields:\n- Date is required\n- Either select a Type with Title, or add at least one Theme');
     }
   };
 
@@ -239,7 +245,7 @@ const SportsEditorialCalendar = () => {
     setEditingItem(null);
     setNewItem({
       date: dateStr,
-      type: 'content',
+      type: null,
       title: '',
       assignees: [],
       status: 'planned',
@@ -350,7 +356,7 @@ const SportsEditorialCalendar = () => {
             <Plus size={16} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
           </div>
           <div className="flex flex-col gap-1">
-            {items.slice(0, 3).map(item => {
+            {items.filter(item => item.type && item.title).slice(0, 3).map(item => {
               const colors = getItemColors(item.type);
               const showSmallDesc = item.type === 'home' || item.type === 'away';
               return (
@@ -396,16 +402,16 @@ const SportsEditorialCalendar = () => {
                 </div>
               );
             })}
-            {items.length > 3 && (
-              <div 
-                className="text-pink-400 text-xs font-semibold hover:text-pink-300 cursor-pointer" 
+            {items.filter(item => item.type && item.title).length > 3 && (
+              <div
+                className="text-pink-400 text-xs font-semibold hover:text-pink-300 cursor-pointer"
                 style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDayClick(day, items);
                 }}
               >
-                +{items.length - 3} more
+                +{items.filter(item => item.type && item.title).length - 3} more
               </div>
             )}
           </div>
@@ -502,7 +508,7 @@ const SportsEditorialCalendar = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {items.map(item => {
+                  {items.filter(item => item.type && item.title).map(item => {
                     const colors = getItemColors(item.type);
                     return (
                       <div key={item.id} className="flex flex-col gap-0.5">
@@ -539,7 +545,7 @@ const SportsEditorialCalendar = () => {
                       </div>
                     );
                   })}
-                  {items.length === 0 && (
+                  {items.filter(item => item.type && item.title).length === 0 && (
                     <div className="text-zinc-600 text-xs text-center py-2">No events</div>
                   )}
                 </div>
@@ -592,7 +598,7 @@ const SportsEditorialCalendar = () => {
                 <Plus size={20} />
               </button>
             </div>
-            <p className="text-zinc-400 text-sm mt-1">{items.length} event{items.length !== 1 ? 's' : ''}</p>
+            <p className="text-zinc-400 text-sm mt-1">{items.filter(item => item.type && item.title).length} event{items.filter(item => item.type && item.title).length !== 1 ? 's' : ''}</p>
           </div>
           <button
             onClick={() => {
@@ -608,12 +614,12 @@ const SportsEditorialCalendar = () => {
 
         {/* Events list */}
         <div className="space-y-3">
-          {items.length === 0 ? (
+          {items.filter(item => item.type && item.title).length === 0 ? (
             <div className="text-center py-12 bg-zinc-900 rounded-lg">
               <p className="text-zinc-400 mb-4">No events scheduled for this day</p>
             </div>
           ) : (
-            items.map(item => {
+            items.filter(item => item.type && item.title).map(item => {
               const colors = getItemColors(item.type);
               const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
 
@@ -783,7 +789,7 @@ const SportsEditorialCalendar = () => {
                 <h3 className="text-xl font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
                   {formattedDate}
                 </h3>
-                <p className="text-red-200 text-sm">{selectedDay.items.length} event{selectedDay.items.length !== 1 ? 's' : ''}</p>
+                <p className="text-red-200 text-sm">{selectedDay.items.filter(item => item.type && item.title).length} event{selectedDay.items.filter(item => item.type && item.title).length !== 1 ? 's' : ''}</p>
               </div>
               <button
                 onClick={() => navigateDayModal(1)}
@@ -803,7 +809,7 @@ const SportsEditorialCalendar = () => {
 
           {/* Events List */}
           <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
-            {selectedDay.items.length === 0 ? (
+            {selectedDay.items.filter(item => item.type && item.title).length === 0 ? (
               <div className="text-center py-8 text-zinc-400">
                 <p className="mb-4">No events for this day</p>
                 <button
@@ -816,7 +822,7 @@ const SportsEditorialCalendar = () => {
                 </button>
               </div>
             ) : (
-              selectedDay.items.map(item => {
+              selectedDay.items.filter(item => item.type && item.title).map(item => {
                 const colors = getItemColors(item.type);
                 const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
 
@@ -911,7 +917,7 @@ const SportsEditorialCalendar = () => {
 
           {/* Footer */}
           <div className="p-4 border-t border-zinc-700 flex justify-between gap-2">
-            {selectedDay.items.length > 0 && (
+            {selectedDay.items.filter(item => item.type && item.title).length > 0 && (
               <button
                 onClick={() => handleAddItemForDate(selectedDay.date)}
                 className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
@@ -993,11 +999,11 @@ const SportsEditorialCalendar = () => {
             <button
               onClick={() => {
                 setEditingItem(null);
-                setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
+                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
                 setShowImportModal(true);
               }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 
-                hover:from-red-500 hover:to-red-600 text-white font-bold rounded-lg transition-all 
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700
+                hover:from-red-500 hover:to-red-600 text-white font-bold rounded-lg transition-all
                 shadow-lg hover:shadow-red-500/25"
               style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
             >
@@ -1179,18 +1185,18 @@ const SportsEditorialCalendar = () => {
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TYPE</label>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TYPE (Optional)</label>
                   <div className="flex flex-wrap gap-2">
                     {typeOptions.map(type => (
                       <button
                         key={type.value}
-                        onClick={() => setNewItem({ ...newItem, type: type.value })}
+                        onClick={() => setNewItem({ ...newItem, type: newItem.type === type.value ? null : type.value })}
                         className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                          newItem.type === type.value 
-                            ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900' 
+                          newItem.type === type.value
+                            ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-900'
                             : 'opacity-60 hover:opacity-100'
                         }`}
-                        style={{ 
+                        style={{
                           backgroundColor: type.color,
                           color: type.value === 'content' || type.value === 'cityconnect' ? '#27272a' : 'white',
                           fontFamily: "'Barlow Condensed', sans-serif"
@@ -1200,16 +1206,17 @@ const SportsEditorialCalendar = () => {
                       </button>
                     ))}
                   </div>
+                  <p className="text-xs text-zinc-500 mt-2">Click selected type to unselect. You can add just themes without a type.</p>
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TITLE</label>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>TITLE {newItem.type ? '(Required)' : '(Optional)'}</label>
                   <input
                     type="text"
                     value={newItem.title}
                     onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Enter title..."
+                    placeholder={newItem.type ? "Enter title..." : "Enter title (optional if adding theme only)..."}
                   />
                 </div>
                 

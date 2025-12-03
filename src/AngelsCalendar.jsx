@@ -298,9 +298,7 @@ const SportsEditorialCalendar = () => {
               {day}
               {hasBirthday && <Cake size={14} className="text-pink-400" />}
             </div>
-            {items.length === 0 && (
-              <Plus size={16} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
-            )}
+            <Plus size={16} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
           </div>
           <div className="flex flex-col gap-1">
             {items.slice(0, 3).map(item => {
@@ -402,7 +400,7 @@ const SportsEditorialCalendar = () => {
             return (
               <div
                 key={idx}
-                className={`rounded-lg p-3 transition-all cursor-pointer hover:scale-105 min-h-[200px]
+                className={`group rounded-lg p-3 transition-all cursor-pointer hover:scale-105 min-h-[200px]
                   ${isToday ? 'ring-2 ring-red-600 bg-gradient-to-br from-red-900/30 to-zinc-900' : 'bg-zinc-900 hover:bg-zinc-800'}
                   ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}
                   ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}`}
@@ -416,8 +414,11 @@ const SportsEditorialCalendar = () => {
                 }}
               >
                 <div className="mb-3">
-                  <div className={`text-xs uppercase font-semibold ${isToday ? 'text-red-400' : 'text-zinc-500'}`} style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                    {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][idx]}
+                  <div className="flex items-center justify-between">
+                    <div className={`text-xs uppercase font-semibold ${isToday ? 'text-red-400' : 'text-zinc-500'}`} style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][idx]}
+                    </div>
+                    <Plus size={14} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
                   </div>
                   <div className={`text-2xl font-bold flex items-center gap-1 ${isToday ? 'text-red-500' : 'text-white'}`} style={{ fontFamily: "'Oswald', sans-serif" }}>
                     {date.getDate()}
@@ -471,7 +472,7 @@ const SportsEditorialCalendar = () => {
     return (
       <div className="max-w-4xl mx-auto space-y-4">
         {/* Day navigation header */}
-        <div className="flex items-center justify-between mb-6 bg-zinc-900 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-6 bg-zinc-900 rounded-lg p-4 group">
           <button
             onClick={() => {
               const newDate = new Date(currentDayView);
@@ -482,11 +483,23 @@ const SportsEditorialCalendar = () => {
           >
             <ChevronLeft size={24} />
           </button>
-          <div className="text-center">
-            <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
-              {formattedDate}
-            </h3>
-            <p className="text-zinc-400 text-sm">{items.length} event{items.length !== 1 ? 's' : ''}</p>
+          <div className="text-center flex-1">
+            <div className="flex items-center justify-center gap-3">
+              <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                {formattedDate}
+              </h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAddItemForDate(dateStr);
+                }}
+                className="p-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors text-white"
+                title="Add item for this day"
+              >
+                <Plus size={20} />
+              </button>
+            </div>
+            <p className="text-zinc-400 text-sm mt-1">{items.length} event{items.length !== 1 ? 's' : ''}</p>
           </div>
           <button
             onClick={() => {
@@ -499,16 +512,6 @@ const SportsEditorialCalendar = () => {
             <ChevronRight size={24} />
           </button>
         </div>
-
-        {/* Add item button */}
-        <button
-          onClick={() => handleAddItemForDate(dateStr)}
-          className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold rounded-lg transition-all"
-          style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-        >
-          <Plus size={20} />
-          ADD ITEM FOR THIS DAY
-        </button>
 
         {/* Events list */}
         <div className="space-y-3">

@@ -290,11 +290,24 @@ const SportsEditorialCalendar = () => {
     const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     const dayItems = calendarItems.filter(item => item.date === dateStr);
     const allThemes = new Set();
+
     dayItems.forEach(item => {
+      // Add manually selected themes
       if (item.themes && Array.isArray(item.themes)) {
         item.themes.forEach(theme => allThemes.add(theme));
       }
+
+      // Auto-add birthday theme for birthday type items
+      if (item.type === 'birthday') {
+        allThemes.add('birthday');
+      }
+
+      // Auto-add city connect theme for "beach weekend" events
+      if (item.title && item.title.toLowerCase().includes('beach weekend')) {
+        allThemes.add('cityconnect');
+      }
     });
+
     return Array.from(allThemes);
   };
 

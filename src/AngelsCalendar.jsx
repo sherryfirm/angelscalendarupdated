@@ -101,7 +101,8 @@ const SportsEditorialCalendar = () => {
     { value: 'away', label: 'AWAY', color: '#666666' },
     { value: 'content', label: 'CONTENT', color: '#eab308' },
     { value: 'event', label: 'EVENT', color: '#003263' },
-    { value: 'promo', label: 'PROMO', color: '#862633' },
+    { value: 'promo', label: 'PROMO', color: '#6b21a8' },
+    { value: 'sponsored', label: 'SPONSORED', color: '#0891b2' },
     { value: 'birthday', label: 'BIRTHDAY', color: '#ec4899' },
     { value: 'cityconnect', label: 'CITY CONNECT', color: '#f5f1e8' }
   ];
@@ -245,7 +246,8 @@ const SportsEditorialCalendar = () => {
       home: 'bg-red-600',
       away: 'bg-zinc-600',
       game: 'bg-red-600',
-      promo: 'bg-rose-900',
+      promo: 'bg-purple-800',
+      sponsored: 'bg-cyan-600',
       content: 'bg-yellow-500',
       event: 'bg-blue-950',
       birthday: 'bg-pink-500',
@@ -256,6 +258,7 @@ const SportsEditorialCalendar = () => {
       away: 'text-white',
       game: 'text-white',
       promo: 'text-white',
+      sponsored: 'text-white',
       content: 'text-zinc-900',
       event: 'text-white',
       birthday: 'text-white',
@@ -591,6 +594,23 @@ const SportsEditorialCalendar = () => {
                         <p className="text-zinc-400 mt-2">{item.notes}</p>
                       )}
 
+                      {/* Post Link */}
+                      {item.links && (
+                        <a
+                          href={item.links}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 mt-2 text-red-400 hover:text-red-300 text-sm font-semibold transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                          </svg>
+                          View Post
+                        </a>
+                      )}
+
                       {/* Assignees */}
                       {item.assignees && item.assignees.length > 0 && (
                         <div className="flex items-center gap-3 mt-3">
@@ -777,6 +797,23 @@ const SportsEditorialCalendar = () => {
                         {/* Notes */}
                         {item.notes && (
                           <p className="text-zinc-400 text-sm mt-1">{item.notes}</p>
+                        )}
+
+                        {/* Post Link */}
+                        {item.links && (
+                          <a
+                            href={item.links}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 mt-2 text-red-400 hover:text-red-300 text-xs font-semibold transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                            </svg>
+                            View Post
+                          </a>
                         )}
 
                         {/* Assignees */}
@@ -1137,7 +1174,18 @@ const SportsEditorialCalendar = () => {
                     placeholder="Additional notes..."
                   />
                 </div>
-                
+
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>POST LINK</label>
+                  <input
+                    type="url"
+                    value={newItem.links}
+                    onChange={(e) => setNewItem({ ...newItem, links: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="https://..."
+                  />
+                </div>
+
                 <div>
                   <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>ASSIGNEES</label>
                   <div className="flex flex-wrap gap-2">

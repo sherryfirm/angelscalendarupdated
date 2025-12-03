@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, Cake } from 'lucide-react';
+import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import { db } from './firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, writeBatch } from 'firebase/firestore';
 import { initialCalendarItems } from './initialData';
@@ -87,7 +87,8 @@ const SportsEditorialCalendar = () => {
     assignees: [],
     status: 'planned',
     notes: '',
-    links: ''
+    links: '',
+    themes: []
   });
 
   const months = [
@@ -95,16 +96,24 @@ const SportsEditorialCalendar = () => {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  // Updated type options with birthday category
+  // Updated type options organized: Home, Away, then ROYGBIV order
   const typeOptions = [
     { value: 'home', label: 'HOME', color: '#ba0021' },
     { value: 'away', label: 'AWAY', color: '#666666' },
+    { value: 'outofoffice', label: 'OUT OF OFFICE', color: '#f97316' },
     { value: 'content', label: 'CONTENT', color: '#eab308' },
     { value: 'event', label: 'EVENT', color: '#003263' },
     { value: 'promo', label: 'PROMO', color: '#6b21a8' },
     { value: 'sponsored', label: 'SPONSORED', color: '#0891b2' },
-    { value: 'birthday', label: 'BIRTHDAY', color: '#ec4899' },
-    { value: 'cityconnect', label: 'CITY CONNECT', color: '#f5f1e8' }
+    { value: 'birthday', label: 'BIRTHDAY', color: '#ec4899' }
+  ];
+
+  // Day theme options with emojis
+  const themeOptions = [
+    { value: 'birthday', label: 'Birthday', emoji: '🎂' },
+    { value: 'cityconnect', label: 'City Connect', emoji: '🏝️' },
+    { value: 'holiday', label: 'Holiday', emoji: '🎉' },
+    { value: 'special', label: 'Special Event', emoji: '⭐' }
   ];
 
   const statusOptions = ['planned', 'in-progress', 'review', 'completed'];
@@ -126,7 +135,7 @@ const SportsEditorialCalendar = () => {
         } else {
           await addDoc(collection(db, 'calendarItems'), { ...newItem, id: Date.now() });
         }
-        setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '' });
+        setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
         setShowImportModal(false);
       } catch (error) {
         console.error('Error saving item:', error);
@@ -235,9 +244,18 @@ const SportsEditorialCalendar = () => {
       assignees: [],
       status: 'planned',
       notes: '',
-      links: ''
+      links: '',
+      themes: []
     });
     setShowImportModal(true);
+  };
+
+  // Toggle theme selection
+  const toggleTheme = (themeValue) => {
+    const themes = newItem.themes?.includes(themeValue)
+      ? newItem.themes.filter(t => t !== themeValue)
+      : [...(newItem.themes || []), themeValue];
+    setNewItem({ ...newItem, themes });
   };
 
   // Get background and text colors for item types
@@ -246,25 +264,38 @@ const SportsEditorialCalendar = () => {
       home: 'bg-red-600',
       away: 'bg-zinc-600',
       game: 'bg-red-600',
+      outofoffice: 'bg-orange-500',
       promo: 'bg-purple-800',
       sponsored: 'bg-cyan-600',
       content: 'bg-yellow-500',
       event: 'bg-blue-950',
-      birthday: 'bg-pink-500',
-      cityconnect: ''
+      birthday: 'bg-pink-500'
     };
     const textColors = {
       home: 'text-white',
       away: 'text-white',
       game: 'text-white',
+      outofoffice: 'text-white',
       promo: 'text-white',
       sponsored: 'text-white',
       content: 'text-zinc-900',
       event: 'text-white',
-      birthday: 'text-white',
-      cityconnect: ''
+      birthday: 'text-white'
     };
     return { bg: bgColors[type] || 'bg-gray-500', text: textColors[type] || 'text-white' };
+  };
+
+  // Get all themes for a specific date
+  const getThemesForDate = (day) => {
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dayItems = calendarItems.filter(item => item.date === dateStr);
+    const allThemes = new Set();
+    dayItems.forEach(item => {
+      if (item.themes && Array.isArray(item.themes)) {
+        item.themes.forEach(theme => allThemes.add(theme));
+      }
+    });
+    return Array.from(allThemes);
   };
 
   const renderCalendarGrid = () => {
@@ -280,17 +311,16 @@ const SportsEditorialCalendar = () => {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const items = getItemsForDate(day);
+      const dayThemes = getThemesForDate(day);
       const isToday = day === new Date().getDate() && currentMonth === new Date().getMonth() && currentYear === new Date().getFullYear();
       const hasGame = items.some(item => item.type === 'game' || item.type === 'home' || item.type === 'away');
-      const hasBirthday = items.some(item => item.type === 'birthday');
-      
+
       days.push(
         <div
           key={day}
           className={`group min-h-24 rounded-lg p-2 transition-all duration-200 hover:scale-105 cursor-pointer
             ${isToday ? 'ring-2 ring-red-600 bg-gradient-to-br from-red-900/30 to-zinc-900' : 'bg-zinc-900 hover:bg-zinc-800'}
             ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}
-            ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}
             ${items.length === 0 ? 'hover:ring-1 hover:ring-red-500/50' : ''}`}
           onClick={() => handleDayClick(day, items)}
           title={items.length === 0 ? 'Click to add new item' : `${items.length} item(s) - Click to view`}
@@ -299,14 +329,16 @@ const SportsEditorialCalendar = () => {
                style={{ fontFamily: "'Oswald', sans-serif" }}>
             <div className="flex items-center gap-1">
               {day}
-              {hasBirthday && <Cake size={14} className="text-pink-400" />}
+              {dayThemes.map(theme => {
+                const themeOption = themeOptions.find(t => t.value === theme);
+                return themeOption ? <span key={theme} className="text-base">{themeOption.emoji}</span> : null;
+              })}
             </div>
             <Plus size={16} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
           </div>
           <div className="flex flex-col gap-1">
             {items.slice(0, 3).map(item => {
               const colors = getItemColors(item.type);
-              const isCityConnect = item.type === 'cityconnect';
               const showSmallDesc = item.type === 'home' || item.type === 'away';
               return (
                 <div key={item.id} className="flex flex-col gap-0.5">
@@ -314,7 +346,6 @@ const SportsEditorialCalendar = () => {
                     className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-pointer
                       hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0`}
                     style={{
-                      ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
                       fontFamily: "'Barlow Condensed', sans-serif",
                       fontSize: '12px'
                     }}
@@ -415,17 +446,24 @@ const SportsEditorialCalendar = () => {
           {weekDays.map((date, idx) => {
             const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             const items = calendarItems.filter(item => item.date === dateStr);
+            const dayThemes = (() => {
+              const allThemes = new Set();
+              items.forEach(item => {
+                if (item.themes && Array.isArray(item.themes)) {
+                  item.themes.forEach(theme => allThemes.add(theme));
+                }
+              });
+              return Array.from(allThemes);
+            })();
             const isToday = date.toDateString() === new Date().toDateString();
             const hasGame = items.some(item => item.type === 'game' || item.type === 'home' || item.type === 'away');
-            const hasBirthday = items.some(item => item.type === 'birthday');
 
             return (
               <div
                 key={idx}
                 className={`group rounded-lg p-3 transition-all cursor-pointer hover:scale-105 min-h-[200px]
                   ${isToday ? 'ring-2 ring-red-600 bg-gradient-to-br from-red-900/30 to-zinc-900' : 'bg-zinc-900 hover:bg-zinc-800'}
-                  ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}
-                  ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}`}
+                  ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}`}
                 onClick={() => {
                   setSelectedDay({
                     day: date.getDate(),
@@ -444,19 +482,20 @@ const SportsEditorialCalendar = () => {
                   </div>
                   <div className={`text-2xl font-bold flex items-center gap-1 ${isToday ? 'text-red-500' : 'text-white'}`} style={{ fontFamily: "'Oswald', sans-serif" }}>
                     {date.getDate()}
-                    {hasBirthday && <Cake size={16} className="text-pink-400" />}
+                    {dayThemes.map(theme => {
+                      const themeOption = themeOptions.find(t => t.value === theme);
+                      return themeOption ? <span key={theme} className="text-lg">{themeOption.emoji}</span> : null;
+                    })}
                   </div>
                 </div>
                 <div className="space-y-2">
                   {items.map(item => {
                     const colors = getItemColors(item.type);
-                    const isCityConnect = item.type === 'cityconnect';
                     return (
                       <div key={item.id} className="flex flex-col gap-0.5">
                         <div
                           className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate cursor-pointer hover:opacity-90`}
                           style={{
-                            ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
                             fontFamily: "'Barlow Condensed', sans-serif"
                           }}
                           onClick={(e) => {
@@ -563,7 +602,6 @@ const SportsEditorialCalendar = () => {
           ) : (
             items.map(item => {
               const colors = getItemColors(item.type);
-              const isCityConnect = item.type === 'cityconnect';
               const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
 
               return (
@@ -577,7 +615,6 @@ const SportsEditorialCalendar = () => {
                       <span
                         className={`${colors.bg} ${colors.text} text-sm px-3 py-1 rounded font-semibold inline-block mb-3`}
                         style={{
-                          ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
                           fontFamily: "'Barlow Condensed', sans-serif"
                         }}
                       >
@@ -768,7 +805,6 @@ const SportsEditorialCalendar = () => {
             ) : (
               selectedDay.items.map(item => {
                 const colors = getItemColors(item.type);
-                const isCityConnect = item.type === 'cityconnect';
                 const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
 
                 return (
@@ -782,7 +818,6 @@ const SportsEditorialCalendar = () => {
                         <span
                           className={`${colors.bg} ${colors.text} text-xs px-2 py-1 rounded font-semibold inline-block mb-2`}
                           style={{
-                            ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
                             fontFamily: "'Barlow Condensed', sans-serif"
                           }}
                         >
@@ -945,7 +980,7 @@ const SportsEditorialCalendar = () => {
             <button
               onClick={() => {
                 setEditingItem(null);
-                setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '' });
+                setNewItem({ date: '', type: 'content', title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
                 setShowImportModal(true);
               }}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700 
@@ -1184,6 +1219,27 @@ const SportsEditorialCalendar = () => {
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="https://..."
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>DAY THEMES (Optional)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {themeOptions.map(theme => (
+                      <button
+                        key={theme.value}
+                        onClick={() => toggleTheme(theme.value)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+                          newItem.themes?.includes(theme.value)
+                            ? 'bg-red-600 text-white ring-2 ring-white ring-offset-2 ring-offset-zinc-900'
+                            : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                        }`}
+                      >
+                        <span className="text-lg">{theme.emoji}</span>
+                        {theme.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-2">Themes appear next to the day number on the calendar</p>
                 </div>
 
                 <div>

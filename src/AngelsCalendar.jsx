@@ -199,15 +199,31 @@ const SportsEditorialCalendar = () => {
 
   const teamMembers = ['Liam', 'Hannah', 'Ricardo', 'Alex', 'Interns'];
 
-  // Handle clicking on a day to show modal with all events
+  // Handle clicking on a day to show modal with all events OR add new item
   const handleDayClick = (day, items) => {
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
     if (items.length > 0) {
+      // Show day modal with existing items
       setSelectedDay({
         day,
-        date: `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        date: dateStr,
         items
       });
       setShowDayModal(true);
+    } else {
+      // Open add item modal with date pre-filled for empty dates
+      setEditingItem(null);
+      setNewItem({
+        date: dateStr,
+        type: 'content',
+        title: '',
+        assignees: [],
+        status: 'planned',
+        notes: '',
+        links: ''
+      });
+      setShowImportModal(true);
     }
   };
 
@@ -254,18 +270,25 @@ const SportsEditorialCalendar = () => {
       const hasBirthday = items.some(item => item.type === 'birthday');
       
       days.push(
-        <div 
-          key={day} 
-          className={`min-h-24 rounded-lg p-2 transition-all duration-200 hover:scale-105 cursor-pointer
+        <div
+          key={day}
+          className={`group min-h-24 rounded-lg p-2 transition-all duration-200 hover:scale-105 cursor-pointer
             ${isToday ? 'ring-2 ring-red-600 bg-gradient-to-br from-red-900/30 to-zinc-900' : 'bg-zinc-900 hover:bg-zinc-800'}
             ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}
-            ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}`}
+            ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}
+            ${items.length === 0 ? 'hover:ring-1 hover:ring-red-500/50' : ''}`}
           onClick={() => handleDayClick(day, items)}
+          title={items.length === 0 ? 'Click to add new item' : `${items.length} item(s) - Click to view`}
         >
-          <div className={`font-bold text-lg mb-1 flex items-center gap-1 ${isToday ? 'text-red-500' : 'text-zinc-500'}`}
+          <div className={`font-bold text-lg mb-1 flex items-center justify-between ${isToday ? 'text-red-500' : 'text-zinc-500'}`}
                style={{ fontFamily: "'Oswald', sans-serif" }}>
-            {day}
-            {hasBirthday && <Cake size={14} className="text-pink-400" />}
+            <div className="flex items-center gap-1">
+              {day}
+              {hasBirthday && <Cake size={14} className="text-pink-400" />}
+            </div>
+            {items.length === 0 && (
+              <Plus size={16} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
+            )}
           </div>
           <div className="flex flex-col gap-1">
             {items.slice(0, 3).map(item => {

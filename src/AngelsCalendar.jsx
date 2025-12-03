@@ -15,10 +15,21 @@ const SportsEditorialCalendar = () => {
   const [calendarItems, setCalendarItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  
-  // NEW: State for day expansion modal
+
+  // State for day expansion modal
   const [selectedDay, setSelectedDay] = useState(null);
   const [showDayModal, setShowDayModal] = useState(false);
+
+  // State for day view - current day being viewed
+  const [currentDayView, setCurrentDayView] = useState(new Date());
+
+  // State for week view - start of current week being viewed
+  const [currentWeekStart, setCurrentWeekStart] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day;
+    return new Date(now.setDate(diff));
+  });
   
   // Firebase real-time listener
   useEffect(() => {
@@ -199,32 +210,33 @@ const SportsEditorialCalendar = () => {
 
   const teamMembers = ['Liam', 'Hannah', 'Ricardo', 'Alex', 'Interns'];
 
-  // Handle clicking on a day to show modal with all events OR add new item
+  // Handle clicking on a day to show modal with all events
   const handleDayClick = (day, items) => {
     const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-    if (items.length > 0) {
-      // Show day modal with existing items
-      setSelectedDay({
-        day,
-        date: dateStr,
-        items
-      });
-      setShowDayModal(true);
-    } else {
-      // Open add item modal with date pre-filled for empty dates
-      setEditingItem(null);
-      setNewItem({
-        date: dateStr,
-        type: 'content',
-        title: '',
-        assignees: [],
-        status: 'planned',
-        notes: '',
-        links: ''
-      });
-      setShowImportModal(true);
-    }
+    // Always show day modal (will have add button for adding new items)
+    setSelectedDay({
+      day,
+      date: dateStr,
+      items
+    });
+    setShowDayModal(true);
+  };
+
+  // Open add item modal with pre-filled date
+  const handleAddItemForDate = (dateStr) => {
+    setShowDayModal(false);
+    setEditingItem(null);
+    setNewItem({
+      date: dateStr,
+      type: 'content',
+      title: '',
+      assignees: [],
+      status: 'planned',
+      notes: '',
+      links: ''
+    });
+    setShowImportModal(true);
   };
 
   // Get background and text colors for item types
@@ -340,54 +352,186 @@ const SportsEditorialCalendar = () => {
     return days;
   };
 
-  // Day Modal Component - Shows all events for a selected day
-  const DayModal = () => {
-    if (!showDayModal || !selectedDay) return null;
-    
-    const dateObj = new Date(selectedDay.date + 'T12:00:00');
-    const formattedDate = dateObj.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
+  // Render Week View
+  const renderWeekView = () => {
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(currentWeekStart);
+      date.setDate(currentWeekStart.getDate() + i);
+      weekDays.push(date);
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* Week navigation header */}
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={() => {
+              const newDate = new Date(currentWeekStart);
+              newDate.setDate(currentWeekStart.getDate() - 7);
+              setCurrentWeekStart(newDate);
+            }}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <h3 className="text-xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
+            {weekDays[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekDays[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </h3>
+          <button
+            onClick={() => {
+              const newDate = new Date(currentWeekStart);
+              newDate.setDate(currentWeekStart.getDate() + 7);
+              setCurrentWeekStart(newDate);
+            }}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+
+        {/* Week grid */}
+        <div className="grid grid-cols-7 gap-3">
+          {weekDays.map((date, idx) => {
+            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const items = calendarItems.filter(item => item.date === dateStr);
+            const isToday = date.toDateString() === new Date().toDateString();
+            const hasGame = items.some(item => item.type === 'game' || item.type === 'home' || item.type === 'away');
+            const hasBirthday = items.some(item => item.type === 'birthday');
+
+            return (
+              <div
+                key={idx}
+                className={`rounded-lg p-3 transition-all cursor-pointer hover:scale-105 min-h-[200px]
+                  ${isToday ? 'ring-2 ring-red-600 bg-gradient-to-br from-red-900/30 to-zinc-900' : 'bg-zinc-900 hover:bg-zinc-800'}
+                  ${hasGame && !isToday ? 'bg-gradient-to-br from-red-900/20 to-zinc-900' : ''}
+                  ${hasBirthday && !hasGame ? 'bg-gradient-to-br from-pink-900/20 to-zinc-900' : ''}`}
+                onClick={() => {
+                  setSelectedDay({
+                    day: date.getDate(),
+                    date: dateStr,
+                    items
+                  });
+                  setShowDayModal(true);
+                }}
+              >
+                <div className="mb-3">
+                  <div className={`text-xs uppercase font-semibold ${isToday ? 'text-red-400' : 'text-zinc-500'}`} style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][idx]}
+                  </div>
+                  <div className={`text-2xl font-bold flex items-center gap-1 ${isToday ? 'text-red-500' : 'text-white'}`} style={{ fontFamily: "'Oswald', sans-serif" }}>
+                    {date.getDate()}
+                    {hasBirthday && <Cake size={16} className="text-pink-400" />}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {items.map(item => {
+                    const colors = getItemColors(item.type);
+                    const isCityConnect = item.type === 'cityconnect';
+                    return (
+                      <div
+                        key={item.id}
+                        className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate`}
+                        style={{
+                          ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
+                          fontFamily: "'Barlow Condensed', sans-serif"
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(item);
+                        }}
+                      >
+                        {item.title}
+                      </div>
+                    );
+                  })}
+                  {items.length === 0 && (
+                    <div className="text-zinc-600 text-xs text-center py-2">No events</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // Render Day View
+  const renderDayView = () => {
+    const dateStr = `${currentDayView.getFullYear()}-${String(currentDayView.getMonth() + 1).padStart(2, '0')}-${String(currentDayView.getDate()).padStart(2, '0')}`;
+    const items = calendarItems.filter(item => item.date === dateStr);
+    const formattedDate = currentDayView.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
 
     return (
-      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-        <div className="bg-zinc-900 rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden border border-zinc-700 shadow-2xl">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-red-700 to-red-900 p-4 flex items-center justify-between">
-            <div>
-              <h3 className="text-xl font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
-                {formattedDate}
-              </h3>
-              <p className="text-red-200 text-sm">{selectedDay.items.length} event{selectedDay.items.length !== 1 ? 's' : ''}</p>
-            </div>
-            <button
-              onClick={() => setShowDayModal(false)}
-              className="text-white hover:text-red-200 transition-colors p-2"
-            >
-              <X size={24} />
-            </button>
+      <div className="max-w-4xl mx-auto space-y-4">
+        {/* Day navigation header */}
+        <div className="flex items-center justify-between mb-6 bg-zinc-900 rounded-lg p-4">
+          <button
+            onClick={() => {
+              const newDate = new Date(currentDayView);
+              newDate.setDate(currentDayView.getDate() - 1);
+              setCurrentDayView(newDate);
+            }}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <div className="text-center">
+            <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
+              {formattedDate}
+            </h3>
+            <p className="text-zinc-400 text-sm">{items.length} event{items.length !== 1 ? 's' : ''}</p>
           </div>
-          
-          {/* Events List */}
-          <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
-            {selectedDay.items.map(item => {
+          <button
+            onClick={() => {
+              const newDate = new Date(currentDayView);
+              newDate.setDate(currentDayView.getDate() + 1);
+              setCurrentDayView(newDate);
+            }}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+
+        {/* Add item button */}
+        <button
+          onClick={() => handleAddItemForDate(dateStr)}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold rounded-lg transition-all"
+          style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+        >
+          <Plus size={20} />
+          ADD ITEM FOR THIS DAY
+        </button>
+
+        {/* Events list */}
+        <div className="space-y-3">
+          {items.length === 0 ? (
+            <div className="text-center py-12 bg-zinc-900 rounded-lg">
+              <p className="text-zinc-400 mb-4">No events scheduled for this day</p>
+            </div>
+          ) : (
+            items.map(item => {
               const colors = getItemColors(item.type);
               const isCityConnect = item.type === 'cityconnect';
               const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
-              
+
               return (
-                <div 
-                  key={item.id} 
-                  className="bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-colors group"
+                <div
+                  key={item.id}
+                  className="bg-zinc-900 rounded-lg p-6 hover:bg-zinc-800 transition-colors group"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       {/* Type Badge */}
-                      <span 
-                        className={`${colors.bg} ${colors.text} text-xs px-2 py-1 rounded font-semibold inline-block mb-2`}
+                      <span
+                        className={`${colors.bg} ${colors.text} text-sm px-3 py-1 rounded font-semibold inline-block mb-3`}
                         style={{
                           ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
                           fontFamily: "'Barlow Condensed', sans-serif"
@@ -395,28 +539,51 @@ const SportsEditorialCalendar = () => {
                       >
                         {typeLabel}
                       </span>
-                      
+
                       {/* Title */}
-                      <h4 className="text-white font-bold text-lg" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                      <h4 className="text-white font-bold text-2xl mb-2" style={{ fontFamily: "'Oswald', sans-serif" }}>
                         {item.title}
                       </h4>
-                      
+
                       {/* Notes */}
                       {item.notes && (
-                        <p className="text-zinc-400 text-sm mt-1">{item.notes}</p>
+                        <p className="text-zinc-400 mt-2">{item.notes}</p>
                       )}
+
+                      {/* Assignees */}
+                      {item.assignees && item.assignees.length > 0 && (
+                        <div className="flex items-center gap-2 mt-3">
+                          <User size={16} className="text-zinc-500" />
+                          <div className="flex gap-2">
+                            {item.assignees.map(assignee => (
+                              <span key={assignee} className="text-xs bg-zinc-800 px-2 py-1 rounded text-zinc-300">
+                                {assignee}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Status */}
+                      <div className="mt-3">
+                        <span className={`text-xs px-2 py-1 rounded font-semibold uppercase ${
+                          item.status === 'completed' ? 'bg-green-900/50 text-green-300' :
+                          item.status === 'in-progress' ? 'bg-blue-900/50 text-blue-300' :
+                          item.status === 'review' ? 'bg-yellow-900/50 text-yellow-300' :
+                          'bg-zinc-800 text-zinc-400'
+                        }`}>
+                          {item.status}
+                        </span>
+                      </div>
                     </div>
-                    
+
                     {/* Action Buttons */}
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
-                        onClick={() => {
-                          setShowDayModal(false);
-                          handleEdit(item);
-                        }}
-                        className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                        onClick={() => handleEdit(item)}
+                        className="p-3 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
                       >
-                        <Edit2 size={16} />
+                        <Edit2 size={18} />
                       </button>
                       <button
                         onClick={() => {
@@ -424,22 +591,188 @@ const SportsEditorialCalendar = () => {
                             handleDelete(item.id);
                           }
                         }}
-                        className="p-2 bg-zinc-700 hover:bg-red-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                        className="p-3 bg-zinc-700 hover:bg-red-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   </div>
                 </div>
               );
-            })}
-          </div>
-          
-          {/* Footer */}
-          <div className="p-4 border-t border-zinc-700 flex justify-end">
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Navigate to previous/next day in modal
+  const navigateDayModal = (direction) => {
+    if (!selectedDay) return;
+
+    const currentDate = new Date(selectedDay.date + 'T12:00:00');
+    currentDate.setDate(currentDate.getDate() + direction);
+
+    const newDay = currentDate.getDate();
+    const newMonth = currentDate.getMonth();
+    const newYear = currentDate.getFullYear();
+
+    // Update current month/year if needed
+    if (newMonth !== currentMonth || newYear !== currentYear) {
+      setCurrentMonth(newMonth);
+      setCurrentYear(newYear);
+    }
+
+    const dateStr = `${newYear}-${String(newMonth + 1).padStart(2, '0')}-${String(newDay).padStart(2, '0')}`;
+    const items = calendarItems.filter(item => item.date === dateStr);
+
+    setSelectedDay({
+      day: newDay,
+      date: dateStr,
+      items
+    });
+  };
+
+  // Day Modal Component - Shows all events for a selected day
+  const DayModal = () => {
+    if (!showDayModal || !selectedDay) return null;
+
+    const dateObj = new Date(selectedDay.date + 'T12:00:00');
+    const formattedDate = dateObj.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return (
+      <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div className="bg-zinc-900 rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden border border-zinc-700 shadow-2xl">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-red-700 to-red-900 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                onClick={() => navigateDayModal(-1)}
+                className="text-white hover:text-red-200 transition-colors p-2 hover:bg-red-800/50 rounded-lg"
+                title="Previous day"
+              >
+                <ChevronLeft size={24} />
+              </button>
+              <div className="text-center flex-1">
+                <h3 className="text-xl font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                  {formattedDate}
+                </h3>
+                <p className="text-red-200 text-sm">{selectedDay.items.length} event{selectedDay.items.length !== 1 ? 's' : ''}</p>
+              </div>
+              <button
+                onClick={() => navigateDayModal(1)}
+                className="text-white hover:text-red-200 transition-colors p-2 hover:bg-red-800/50 rounded-lg"
+                title="Next day"
+              >
+                <ChevronRight size={24} />
+              </button>
+            </div>
             <button
               onClick={() => setShowDayModal(false)}
-              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg font-semibold transition-colors"
+              className="absolute top-4 right-4 text-white hover:text-red-200 transition-colors p-2"
+            >
+              <X size={24} />
+            </button>
+          </div>
+
+          {/* Events List */}
+          <div className="p-4 overflow-y-auto max-h-[60vh] space-y-3">
+            {selectedDay.items.length === 0 ? (
+              <div className="text-center py-8 text-zinc-400">
+                <p className="mb-4">No events for this day</p>
+                <button
+                  onClick={() => handleAddItemForDate(selectedDay.date)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  <Plus size={16} />
+                  ADD ITEM
+                </button>
+              </div>
+            ) : (
+              selectedDay.items.map(item => {
+                const colors = getItemColors(item.type);
+                const isCityConnect = item.type === 'cityconnect';
+                const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
+
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        {/* Type Badge */}
+                        <span
+                          className={`${colors.bg} ${colors.text} text-xs px-2 py-1 rounded font-semibold inline-block mb-2`}
+                          style={{
+                            ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
+                            fontFamily: "'Barlow Condensed', sans-serif"
+                          }}
+                        >
+                          {typeLabel}
+                        </span>
+
+                        {/* Title */}
+                        <h4 className="text-white font-bold text-lg" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                          {item.title}
+                        </h4>
+
+                        {/* Notes */}
+                        {item.notes && (
+                          <p className="text-zinc-400 text-sm mt-1">{item.notes}</p>
+                        )}
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setShowDayModal(false);
+                            handleEdit(item);
+                          }}
+                          className="p-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Delete this item?')) {
+                              handleDelete(item.id);
+                            }
+                          }}
+                          className="p-2 bg-zinc-700 hover:bg-red-600 rounded-lg text-zinc-300 hover:text-white transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-zinc-700 flex justify-between gap-2">
+            {selectedDay.items.length > 0 && (
+              <button
+                onClick={() => handleAddItemForDate(selectedDay.date)}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+              >
+                <Plus size={16} />
+                ADD ITEM
+              </button>
+            )}
+            <button
+              onClick={() => setShowDayModal(false)}
+              className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg font-semibold transition-colors ml-auto"
             >
               Close
             </button>
@@ -526,36 +859,75 @@ const SportsEditorialCalendar = () => {
 
       {/* Month Navigation */}
       <div className="px-8 py-4 flex items-center justify-between border-b border-zinc-800">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              if (currentMonth === 0) {
-                setCurrentMonth(11);
-                setCurrentYear(currentYear - 1);
-              } else {
-                setCurrentMonth(currentMonth - 1);
-              }
-            }}
-            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
-          >
-            <ChevronLeft size={24} />
-          </button>
-          <h2 className="text-2xl font-bold w-48 text-center" style={{ fontFamily: "'Oswald', sans-serif" }}>
-            {months[currentMonth]} {currentYear}
-          </h2>
-          <button
-            onClick={() => {
-              if (currentMonth === 11) {
-                setCurrentMonth(0);
-                setCurrentYear(currentYear + 1);
-              } else {
-                setCurrentMonth(currentMonth + 1);
-              }
-            }}
-            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
-          >
-            <ChevronRight size={24} />
-          </button>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (currentMonth === 0) {
+                  setCurrentMonth(11);
+                  setCurrentYear(currentYear - 1);
+                } else {
+                  setCurrentMonth(currentMonth - 1);
+                }
+              }}
+              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <h2 className="text-2xl font-bold w-48 text-center" style={{ fontFamily: "'Oswald', sans-serif" }}>
+              {months[currentMonth]} {currentYear}
+            </h2>
+            <button
+              onClick={() => {
+                if (currentMonth === 11) {
+                  setCurrentMonth(0);
+                  setCurrentYear(currentYear + 1);
+                } else {
+                  setCurrentMonth(currentMonth + 1);
+                }
+              }}
+              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center gap-2 border-l border-zinc-700 pl-4">
+            <button
+              onClick={() => setViewMode('month')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                viewMode === 'month'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+              }`}
+              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+            >
+              MONTH
+            </button>
+            <button
+              onClick={() => setViewMode('week')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                viewMode === 'week'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+              }`}
+              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+            >
+              WEEK
+            </button>
+            <button
+              onClick={() => setViewMode('day')}
+              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                viewMode === 'day'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+              }`}
+              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+            >
+              DAY
+            </button>
+          </div>
         </div>
         
         {/* Legend */}
@@ -574,18 +946,26 @@ const SportsEditorialCalendar = () => {
         </div>
       </div>
 
-      {/* Calendar Grid */}
+      {/* Calendar Views */}
       <div className="p-8">
-        <div className="grid grid-cols-7 gap-2 mb-2">
-          {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => (
-            <div key={day} className="text-center py-2 text-zinc-500 font-bold text-sm" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {day}
+        {viewMode === 'month' && (
+          <>
+            <div className="grid grid-cols-7 gap-2 mb-2">
+              {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => (
+                <div key={day} className="text-center py-2 text-zinc-500 font-bold text-sm" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  {day}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-2">
-          {renderCalendarGrid()}
-        </div>
+            <div className="grid grid-cols-7 gap-2">
+              {renderCalendarGrid()}
+            </div>
+          </>
+        )}
+
+        {viewMode === 'week' && renderWeekView()}
+
+        {viewMode === 'day' && renderDayView()}
       </div>
 
       {/* Add/Edit Modal */}

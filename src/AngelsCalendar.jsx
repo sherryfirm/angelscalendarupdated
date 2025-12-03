@@ -30,7 +30,11 @@ const SportsEditorialCalendar = () => {
     const diff = now.getDate() - day;
     return new Date(now.setDate(diff));
   });
-  
+
+  // State for drag and drop
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverItem, setDragOverItem] = useState(null);
+
   // Firebase real-time listener
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'calendarItems'), (snapshot) => {
@@ -88,7 +92,8 @@ const SportsEditorialCalendar = () => {
     status: 'planned',
     notes: '',
     links: '',
-    themes: []
+    themes: [],
+    order: Date.now()
   });
 
   const months = [
@@ -139,7 +144,7 @@ const SportsEditorialCalendar = () => {
         } else {
           await addDoc(collection(db, 'calendarItems'), { ...newItem, id: Date.now() });
         }
-        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
+        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now() });
         setShowImportModal(false);
       } catch (error) {
         console.error('Error saving item:', error);
@@ -251,7 +256,8 @@ const SportsEditorialCalendar = () => {
       status: 'planned',
       notes: '',
       links: '',
-      themes: []
+      themes: [],
+      order: Date.now()
     });
     setShowImportModal(true);
   };
@@ -262,6 +268,70 @@ const SportsEditorialCalendar = () => {
       ? newItem.themes.filter(t => t !== themeValue)
       : [...(newItem.themes || []), themeValue];
     setNewItem({ ...newItem, themes });
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e, item) => {
+    setDraggedItem(item);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', e.target);
+  };
+
+  const handleDragOver = (e, item) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverItem(item);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDrop = async (e, targetItem) => {
+    e.preventDefault();
+
+    if (!draggedItem || !targetItem || draggedItem.id === targetItem.id) {
+      setDraggedItem(null);
+      setDragOverItem(null);
+      return;
+    }
+
+    // Get all items for the same date, sorted by order
+    const dateItems = calendarItems
+      .filter(item => item.date === draggedItem.date && item.type && item.title)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    // Find indices
+    const draggedIndex = dateItems.findIndex(item => item.id === draggedItem.id);
+    const targetIndex = dateItems.findIndex(item => item.id === targetItem.id);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedItem(null);
+      setDragOverItem(null);
+      return;
+    }
+
+    // Reorder the items array
+    const reorderedItems = [...dateItems];
+    const [removed] = reorderedItems.splice(draggedIndex, 1);
+    reorderedItems.splice(targetIndex, 0, removed);
+
+    // Update order values for all items on this date
+    try {
+      const batch = writeBatch(db);
+      reorderedItems.forEach((item, index) => {
+        const itemRef = doc(db, 'calendarItems', item.id);
+        batch.update(itemRef, { order: index });
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error('Error reordering items:', error);
+      alert('Error reordering items. Please try again.');
+    }
+
+    setDraggedItem(null);
+    setDragOverItem(null);
   };
 
   // Get background and text colors for item types
@@ -356,14 +426,23 @@ const SportsEditorialCalendar = () => {
             <Plus size={16} className="text-zinc-600 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" />
           </div>
           <div className="flex flex-col gap-1">
-            {items.filter(item => item.type && item.title).slice(0, 3).map(item => {
+            {items.filter(item => item.type && item.title).sort((a, b) => (a.order || 0) - (b.order || 0)).slice(0, 3).map(item => {
               const colors = getItemColors(item.type);
               const showSmallDesc = item.type === 'home' || item.type === 'away';
+              const isDragging = draggedItem?.id === item.id;
+              const isDragOver = dragOverItem?.id === item.id;
               return (
                 <div key={item.id} className="flex flex-col gap-0.5">
                   <div
-                    className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-pointer
-                      hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, item)}
+                    onDragOver={(e) => handleDragOver(e, item)}
+                    onDrop={(e) => handleDrop(e, item)}
+                    onDragEnd={handleDragEnd}
+                    className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-move
+                      hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0
+                      ${isDragging ? 'opacity-50 scale-95' : ''}
+                      ${isDragOver ? 'ring-2 ring-white' : ''}`}
                     style={{
                       fontFamily: "'Barlow Condensed', sans-serif",
                       fontSize: '12px'
@@ -372,7 +451,7 @@ const SportsEditorialCalendar = () => {
                       e.stopPropagation();
                       handleEdit(item);
                     }}
-                    title={item.title}
+                    title={`${item.title} (drag to reorder)`}
                   >
                     <span className="truncate">{item.title}</span>
                     {showSmallDesc && item.notes && (
@@ -508,12 +587,21 @@ const SportsEditorialCalendar = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  {items.filter(item => item.type && item.title).map(item => {
+                  {items.filter(item => item.type && item.title).sort((a, b) => (a.order || 0) - (b.order || 0)).map(item => {
                     const colors = getItemColors(item.type);
+                    const isDragging = draggedItem?.id === item.id;
+                    const isDragOver = dragOverItem?.id === item.id;
                     return (
                       <div key={item.id} className="flex flex-col gap-0.5">
                         <div
-                          className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate cursor-pointer hover:opacity-90`}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, item)}
+                          onDragOver={(e) => handleDragOver(e, item)}
+                          onDrop={(e) => handleDrop(e, item)}
+                          onDragEnd={handleDragEnd}
+                          className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate cursor-move hover:opacity-90 transition-all
+                            ${isDragging ? 'opacity-50 scale-95' : ''}
+                            ${isDragOver ? 'ring-2 ring-white' : ''}`}
                           style={{
                             fontFamily: "'Barlow Condensed', sans-serif"
                           }}
@@ -521,6 +609,7 @@ const SportsEditorialCalendar = () => {
                             e.stopPropagation();
                             handleEdit(item);
                           }}
+                          title={`${item.title} (drag to reorder)`}
                         >
                           {item.title}
                         </div>
@@ -619,14 +708,24 @@ const SportsEditorialCalendar = () => {
               <p className="text-zinc-400 mb-4">No events scheduled for this day</p>
             </div>
           ) : (
-            items.filter(item => item.type && item.title).map(item => {
+            items.filter(item => item.type && item.title).sort((a, b) => (a.order || 0) - (b.order || 0)).map(item => {
               const colors = getItemColors(item.type);
               const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
+              const isDragging = draggedItem?.id === item.id;
+              const isDragOver = dragOverItem?.id === item.id;
 
               return (
                 <div
                   key={item.id}
-                  className="bg-zinc-900 rounded-lg p-6 hover:bg-zinc-800 transition-colors group"
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, item)}
+                  onDragOver={(e) => handleDragOver(e, item)}
+                  onDrop={(e) => handleDrop(e, item)}
+                  onDragEnd={handleDragEnd}
+                  className={`bg-zinc-900 rounded-lg p-6 hover:bg-zinc-800 transition-all group cursor-move
+                    ${isDragging ? 'opacity-50 scale-95' : ''}
+                    ${isDragOver ? 'ring-2 ring-red-500' : ''}`}
+                  title="Drag to reorder"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -822,14 +921,24 @@ const SportsEditorialCalendar = () => {
                 </button>
               </div>
             ) : (
-              selectedDay.items.filter(item => item.type && item.title).map(item => {
+              selectedDay.items.filter(item => item.type && item.title).sort((a, b) => (a.order || 0) - (b.order || 0)).map(item => {
                 const colors = getItemColors(item.type);
                 const typeLabel = typeOptions.find(t => t.value === item.type)?.label || item.type.toUpperCase();
+                const isDragging = draggedItem?.id === item.id;
+                const isDragOver = dragOverItem?.id === item.id;
 
                 return (
                   <div
                     key={item.id}
-                    className="bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-colors group"
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, item)}
+                    onDragOver={(e) => handleDragOver(e, item)}
+                    onDrop={(e) => handleDrop(e, item)}
+                    onDragEnd={handleDragEnd}
+                    className={`bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-all group cursor-move
+                      ${isDragging ? 'opacity-50 scale-95' : ''}
+                      ${isDragOver ? 'ring-2 ring-red-500' : ''}`}
+                    title="Drag to reorder"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
@@ -999,7 +1108,7 @@ const SportsEditorialCalendar = () => {
             <button
               onClick={() => {
                 setEditingItem(null);
-                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [] });
+                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now() });
                 setShowImportModal(true);
               }}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700

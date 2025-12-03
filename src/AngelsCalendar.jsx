@@ -306,26 +306,45 @@ const SportsEditorialCalendar = () => {
               const isCityConnect = item.type === 'cityconnect';
               const showSmallDesc = item.type === 'home' || item.type === 'away';
               return (
-                <div
-                  key={item.id}
-                  className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-pointer 
-                    hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0`}
-                  style={{
-                    ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
-                    fontFamily: "'Barlow Condensed', sans-serif",
-                    fontSize: '12px'
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(item);
-                  }}
-                  title={item.title}
-                >
-                  <span className="truncate">{item.title}</span>
-                  {showSmallDesc && item.notes && (
-                    <span className="text-[11px] text-zinc-300 truncate font-normal normal-case" style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0' }}>
-                      {item.notes}
-                    </span>
+                <div key={item.id} className="flex flex-col gap-0.5">
+                  <div
+                    className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-pointer
+                      hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0`}
+                    style={{
+                      ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
+                      fontFamily: "'Barlow Condensed', sans-serif",
+                      fontSize: '12px'
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEdit(item);
+                    }}
+                    title={item.title}
+                  >
+                    <span className="truncate">{item.title}</span>
+                    {showSmallDesc && item.notes && (
+                      <span className="text-[11px] text-zinc-300 truncate font-normal normal-case" style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0' }}>
+                        {item.notes}
+                      </span>
+                    )}
+                  </div>
+                  {item.assignees && item.assignees.length > 0 && (
+                    <div className="flex gap-0.5 px-1">
+                      {item.assignees.slice(0, 3).map((assignee, idx) => (
+                        <div
+                          key={idx}
+                          className="w-4 h-4 rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold text-white"
+                          title={assignee}
+                        >
+                          {assignee.charAt(0).toUpperCase()}
+                        </div>
+                      ))}
+                      {item.assignees.length > 3 && (
+                        <div className="w-4 h-4 rounded-full bg-zinc-700 flex items-center justify-center text-[7px] font-bold text-white">
+                          +{item.assignees.length - 3}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               );
@@ -430,19 +449,38 @@ const SportsEditorialCalendar = () => {
                     const colors = getItemColors(item.type);
                     const isCityConnect = item.type === 'cityconnect';
                     return (
-                      <div
-                        key={item.id}
-                        className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate`}
-                        style={{
-                          ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
-                          fontFamily: "'Barlow Condensed', sans-serif"
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEdit(item);
-                        }}
-                      >
-                        {item.title}
+                      <div key={item.id} className="flex flex-col gap-0.5">
+                        <div
+                          className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate cursor-pointer hover:opacity-90`}
+                          style={{
+                            ...(isCityConnect ? { backgroundColor: '#f5f1e8', color: '#ba0021' } : {}),
+                            fontFamily: "'Barlow Condensed', sans-serif"
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(item);
+                          }}
+                        >
+                          {item.title}
+                        </div>
+                        {item.assignees && item.assignees.length > 0 && (
+                          <div className="flex gap-0.5 px-1">
+                            {item.assignees.slice(0, 3).map((assignee, idx) => (
+                              <div
+                                key={idx}
+                                className="w-4 h-4 rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold text-white"
+                                title={assignee}
+                              >
+                                {assignee.charAt(0).toUpperCase()}
+                              </div>
+                            ))}
+                            {item.assignees.length > 3 && (
+                              <div className="w-4 h-4 rounded-full bg-zinc-700 flex items-center justify-center text-[7px] font-bold text-white">
+                                +{item.assignees.length - 3}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -555,9 +593,19 @@ const SportsEditorialCalendar = () => {
 
                       {/* Assignees */}
                       {item.assignees && item.assignees.length > 0 && (
-                        <div className="flex items-center gap-2 mt-3">
-                          <User size={16} className="text-zinc-500" />
-                          <div className="flex gap-2">
+                        <div className="flex items-center gap-3 mt-3">
+                          <div className="flex -space-x-2">
+                            {item.assignees.map((assignee, idx) => (
+                              <div
+                                key={idx}
+                                className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center text-sm font-bold text-white border-2 border-zinc-900 hover:scale-110 transition-transform cursor-help"
+                                title={assignee}
+                              >
+                                {assignee.charAt(0).toUpperCase()}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
                             {item.assignees.map(assignee => (
                               <span key={assignee} className="text-xs bg-zinc-800 px-2 py-1 rounded text-zinc-300">
                                 {assignee}
@@ -729,6 +777,21 @@ const SportsEditorialCalendar = () => {
                         {/* Notes */}
                         {item.notes && (
                           <p className="text-zinc-400 text-sm mt-1">{item.notes}</p>
+                        )}
+
+                        {/* Assignees */}
+                        {item.assignees && item.assignees.length > 0 && (
+                          <div className="flex gap-1 mt-2">
+                            {item.assignees.map((assignee, idx) => (
+                              <div
+                                key={idx}
+                                className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center text-[9px] font-bold text-white"
+                                title={assignee}
+                              >
+                                {assignee.charAt(0).toUpperCase()}
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
 

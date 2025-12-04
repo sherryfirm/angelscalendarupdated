@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap } from 'lucide-react';
+import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, RefreshCw } from 'lucide-react';
 import { db } from './firebase';
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { initialCalendarItems } from './initialData';
 
 const SportsEditorialCalendar = () => {
@@ -35,19 +35,80 @@ const SportsEditorialCalendar = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverItem, setDragOverItem] = useState(null);
 
-  // Firebase real-time listener
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'calendarItems'), (snapshot) => {
-      const items = snapshot.docs.map(d => {
-        const data = d.data();
-        return { ...data, id: d.id };
-      });
-      setCalendarItems(items);
-      setLoading(false);
-    });
+  // ========================================
+  // FIREBASE READ OPTIMIZATION WITH CACHING
+  // ========================================
+  // Strategy: Use localStorage cache + targeted once() reads
+  // This reduces reads from ~100+/day to ~10-20/day
+  // Cache is invalidated after 24 hours or manual refresh
 
-    return () => unsubscribe();
+  const CACHE_KEY = 'calendarItems_cache';
+  const CACHE_TIMESTAMP_KEY = 'calendarItems_timestamp';
+  const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+  // Load data from cache or Firebase
+  const loadCalendarData = async (forceRefresh = false) => {
+    setLoading(true);
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cachedData = localStorage.getItem(CACHE_KEY);
+      const cacheTimestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+
+      if (cachedData && cacheTimestamp) {
+        const age = Date.now() - parseInt(cacheTimestamp);
+        if (age < CACHE_DURATION) {
+          // Use cached data (0 Firebase reads!)
+          console.log('📦 Using cached data (age: ' + Math.round(age / 1000 / 60) + ' minutes)');
+          setCalendarItems(JSON.parse(cachedData));
+          setLoading(false);
+          return;
+        }
+      }
+    }
+
+    // Fetch from Firebase (1 read per document)
+    console.log('🔄 Fetching from Firebase...');
+    try {
+      const snapshot = await getDocs(collection(db, 'calendarItems'));
+      const items = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+
+      // Update cache
+      localStorage.setItem(CACHE_KEY, JSON.stringify(items));
+      localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+
+      setCalendarItems(items);
+      console.log('✅ Loaded ' + items.length + ' items from Firebase');
+    } catch (error) {
+      console.error('Error loading calendar data:', error);
+      alert('Error loading calendar. Please try again.');
+    }
+    setLoading(false);
+  };
+
+  // Initial load on mount
+  useEffect(() => {
+    loadCalendarData();
   }, []);
+
+  // Debounced cache update function (prevents rapid successive writes)
+  const updateCacheDebounced = (() => {
+    let timeout;
+    return (items) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(items));
+        localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+      }, 500);
+    };
+  })();
+
+  // Update cache when items change
+  useEffect(() => {
+    if (calendarItems.length > 0) {
+      updateCacheDebounced(calendarItems);
+    }
+  }, [calendarItems]);
   
   // Seed database with initial data (chunked upload)
   const seedDatabase = async () => {
@@ -139,10 +200,18 @@ const SportsEditorialCalendar = () => {
     if (newItem.date && (hasTypeAndTitle || hasThemes)) {
       try {
         if (editingItem) {
+          // Update existing item
           await updateDoc(doc(db, 'calendarItems', editingItem.id), newItem);
+          // Optimistically update local state (0 additional reads)
+          setCalendarItems(items => items.map(item =>
+            item.id === editingItem.id ? { ...newItem, id: editingItem.id } : item
+          ));
           setEditingItem(null);
         } else {
-          await addDoc(collection(db, 'calendarItems'), { ...newItem, id: Date.now() });
+          // Add new item
+          const docRef = await addDoc(collection(db, 'calendarItems'), { ...newItem, id: Date.now() });
+          // Optimistically add to local state (0 additional reads)
+          setCalendarItems(items => [...items, { ...newItem, id: docRef.id }]);
         }
         setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now() });
         setShowImportModal(false);
@@ -164,6 +233,8 @@ const SportsEditorialCalendar = () => {
   const handleDelete = async (id) => {
     try {
       await deleteDoc(doc(db, 'calendarItems', id));
+      // Optimistically remove from local state (0 additional reads)
+      setCalendarItems(items => items.filter(item => item.id !== id));
     } catch (error) {
       console.error('Error deleting item:', error);
       alert('Error deleting item. Please try again.');
@@ -1127,27 +1198,28 @@ const SportsEditorialCalendar = () => {
         >
         </div>
         
-        <div className="relative z-10 p-8 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
-              <img src="/logo.png" alt="Angels Logo" className="w-10 h-10 object-contain" />
+        {/* Mobile-responsive header: stack on small screens */}
+        <div className="relative z-10 p-4 sm:p-6 md:p-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+              <img src="/logo.png" alt="Angels Logo" className="w-8 h-8 sm:w-10 sm:h-10 object-contain" />
             </div>
             <div>
-              <h1 className="text-3xl font-black tracking-tight" style={{ fontFamily: "'Oswald', sans-serif" }}>
+              <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-tight" style={{ fontFamily: "'Oswald', sans-serif" }}>
                 @ANGELS CALENDAR
               </h1>
-              <p className="text-red-300 text-sm font-semibold tracking-widest uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+              <p className="text-red-300 text-xs sm:text-sm font-semibold tracking-widest uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
                 2026 Season Schedule
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-center">
             {calendarItems.length === 0 && (
               <button
                 onClick={seedDatabase}
                 disabled={syncing}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-700 
-                  hover:from-green-500 hover:to-green-600 text-white font-bold rounded-lg transition-all 
+                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-600 to-green-700
+                  hover:from-green-500 hover:to-green-600 text-white font-bold rounded-lg transition-all
                   shadow-lg hover:shadow-green-500/25 disabled:opacity-50"
                 style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
               >
@@ -1155,6 +1227,17 @@ const SportsEditorialCalendar = () => {
                 {syncing ? 'SYNCING...' : 'LOAD SCHEDULE'}
               </button>
             )}
+            {/* Manual Refresh Button - Forces Firebase reload */}
+            <button
+              onClick={() => loadCalendarData(true)}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2.5 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-lg transition-all disabled:opacity-50"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
+              title="Refresh data from server"
+            >
+              <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">REFRESH</span>
+            </button>
             <button
               onClick={() => {
                 setEditingItem(null);
@@ -1167,15 +1250,17 @@ const SportsEditorialCalendar = () => {
               style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
             >
               <Plus size={18} />
-              ADD ITEM
+              <span className="hidden sm:inline">ADD ITEM</span>
+              <span className="sm:hidden">ADD</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Month Navigation */}
-      <div className="px-8 py-4 flex items-center justify-between border-b border-zinc-800">
-        <div className="flex items-center gap-4">
+      {/* Month Navigation - Mobile Responsive */}
+      <div className="px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex flex-col sm:flex-row items-center justify-between border-b border-zinc-800 gap-3">
+        <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 w-full sm:w-auto">
+          {/* Month/Year Navigation */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -1186,11 +1271,12 @@ const SportsEditorialCalendar = () => {
                   setCurrentMonth(currentMonth - 1);
                 }
               }}
-              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              className="p-3 hover:bg-zinc-800 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="Previous month"
             >
-              <ChevronLeft size={24} />
+              <ChevronLeft size={20} />
             </button>
-            <h2 className="text-2xl font-bold w-48 text-center" style={{ fontFamily: "'Oswald', sans-serif" }}>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold min-w-[140px] sm:min-w-[180px] text-center" style={{ fontFamily: "'Oswald', sans-serif" }}>
               {months[currentMonth]} {currentYear}
             </h2>
             <button
@@ -1202,17 +1288,18 @@ const SportsEditorialCalendar = () => {
                   setCurrentMonth(currentMonth + 1);
                 }
               }}
-              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              className="p-3 hover:bg-zinc-800 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label="Next month"
             >
-              <ChevronRight size={24} />
+              <ChevronRight size={20} />
             </button>
           </div>
 
           {/* View Mode Switcher */}
-          <div className="flex items-center gap-2 border-l border-zinc-700 pl-4">
+          <div className="flex items-center gap-2 sm:border-l border-zinc-700 sm:pl-4">
             <button
               onClick={() => setViewMode('month')}
-              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+              className={`px-3 sm:px-4 py-2.5 rounded-lg font-semibold transition-all text-sm min-h-[44px] ${
                 viewMode === 'month'
                   ? 'bg-red-600 text-white'
                   : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
@@ -1223,7 +1310,7 @@ const SportsEditorialCalendar = () => {
             </button>
             <button
               onClick={() => setViewMode('week')}
-              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+              className={`px-3 sm:px-4 py-2.5 rounded-lg font-semibold transition-all text-sm min-h-[44px] ${
                 viewMode === 'week'
                   ? 'bg-red-600 text-white'
                   : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
@@ -1234,7 +1321,7 @@ const SportsEditorialCalendar = () => {
             </button>
             <button
               onClick={() => setViewMode('day')}
-              className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+              className={`px-3 sm:px-4 py-2.5 rounded-lg font-semibold transition-all text-sm min-h-[44px] ${
                 viewMode === 'day'
                   ? 'bg-red-600 text-white'
                   : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
@@ -1245,9 +1332,9 @@ const SportsEditorialCalendar = () => {
             </button>
           </div>
         </div>
-        
-        {/* Legend */}
-        <div className="flex items-center gap-4 flex-wrap">
+
+        {/* Legend - Scrollable on mobile */}
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap justify-center sm:justify-start overflow-x-auto w-full sm:w-auto pb-2 sm:pb-0">
           {typeOptions.map(type => (
             <div key={type.value} className="flex items-center gap-2">
               <div 
@@ -1262,21 +1349,26 @@ const SportsEditorialCalendar = () => {
         </div>
       </div>
 
-      {/* Calendar Views */}
-      <div className="p-8">
+      {/* Calendar Views - Mobile Responsive */}
+      <div className="p-3 sm:p-4 md:p-6 lg:p-8">
         {viewMode === 'month' && (
-          <>
-            <div className="grid grid-cols-7 gap-2 mb-2">
-              {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => (
-                <div key={day} className="text-center py-2 text-zinc-500 font-bold text-sm" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                  {day}
-                </div>
-              ))}
+          <div className="overflow-x-auto -mx-3 sm:mx-0">
+            <div className="min-w-[640px] sm:min-w-0">
+              {/* Day labels */}
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2 px-3 sm:px-0">
+                {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((day, idx) => (
+                  <div key={day} className="text-center py-2 text-zinc-500 font-bold text-xs sm:text-sm" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    <span className="hidden sm:inline">{day}</span>
+                    <span className="sm:hidden">{day.charAt(0)}</span>
+                  </div>
+                ))}
+              </div>
+              {/* Calendar grid */}
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 px-3 sm:px-0">
+                {renderCalendarGrid()}
+              </div>
             </div>
-            <div className="grid grid-cols-7 gap-2">
-              {renderCalendarGrid()}
-            </div>
-          </>
+          </div>
         )}
 
         {viewMode === 'week' && renderWeekView()}
@@ -1284,10 +1376,10 @@ const SportsEditorialCalendar = () => {
         {viewMode === 'day' && renderDayView()}
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* Add/Edit Modal - Full screen on mobile */}
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto border border-zinc-700">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-0 sm:p-4">
+          <div className="bg-zinc-900 rounded-none sm:rounded-2xl p-4 sm:p-6 w-full h-full sm:h-auto sm:max-w-lg sm:max-h-[90vh] overflow-y-auto border-0 sm:border border-zinc-700">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
                 {editingItem ? 'EDIT ITEM' : 'ADD NEW ITEM'}

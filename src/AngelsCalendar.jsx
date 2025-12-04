@@ -388,17 +388,33 @@ const SportsEditorialCalendar = () => {
     const [removed] = reorderedItems.splice(draggedIndex, 1);
     reorderedItems.splice(targetIndex, 0, removed);
 
-    // Update order values for all items on this date
+    // Assign new order values
+    const itemsWithNewOrder = reorderedItems.map((item, index) => ({
+      ...item,
+      order: index
+    }));
+
+    // Optimistically update local state immediately (instant UI update)
+    setCalendarItems(prevItems => {
+      const otherItems = prevItems.filter(item =>
+        item.date !== draggedItem.date || !item.type || !item.title
+      );
+      return [...otherItems, ...itemsWithNewOrder];
+    });
+
+    // Update Firebase in background
     try {
       const batch = writeBatch(db);
-      reorderedItems.forEach((item, index) => {
+      itemsWithNewOrder.forEach((item) => {
         const itemRef = doc(db, 'calendarItems', item.id);
-        batch.update(itemRef, { order: index });
+        batch.update(itemRef, { order: item.order });
       });
       await batch.commit();
     } catch (error) {
       console.error('Error reordering items:', error);
       alert('Error reordering items. Please try again.');
+      // Reload data to revert on error
+      loadCalendarData(true);
     }
 
     setDraggedItem(null);
@@ -1298,7 +1314,9 @@ const SportsEditorialCalendar = () => {
           {/* View Mode Switcher */}
           <div className="flex items-center gap-2 sm:border-l border-zinc-700 sm:pl-4">
             <button
-              onClick={() => setViewMode('month')}
+              onClick={() => {
+                setViewMode('month');
+              }}
               className={`px-3 sm:px-4 py-2.5 rounded-lg font-semibold transition-all text-sm min-h-[44px] ${
                 viewMode === 'month'
                   ? 'bg-red-600 text-white'
@@ -1309,7 +1327,15 @@ const SportsEditorialCalendar = () => {
               MONTH
             </button>
             <button
-              onClick={() => setViewMode('week')}
+              onClick={() => {
+                // Set week view to start of current month being viewed
+                const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+                const dayOfWeek = firstDayOfMonth.getDay();
+                const weekStart = new Date(firstDayOfMonth);
+                weekStart.setDate(firstDayOfMonth.getDate() - dayOfWeek);
+                setCurrentWeekStart(weekStart);
+                setViewMode('week');
+              }}
               className={`px-3 sm:px-4 py-2.5 rounded-lg font-semibold transition-all text-sm min-h-[44px] ${
                 viewMode === 'week'
                   ? 'bg-red-600 text-white'
@@ -1320,7 +1346,11 @@ const SportsEditorialCalendar = () => {
               WEEK
             </button>
             <button
-              onClick={() => setViewMode('day')}
+              onClick={() => {
+                // Set day view to first day of current month being viewed
+                setCurrentDayView(new Date(currentYear, currentMonth, 1));
+                setViewMode('day');
+              }}
               className={`px-3 sm:px-4 py-2.5 rounded-lg font-semibold transition-all text-sm min-h-[44px] ${
                 viewMode === 'day'
                   ? 'bg-red-600 text-white'

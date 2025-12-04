@@ -35,6 +35,22 @@ const SportsEditorialCalendar = () => {
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverItem, setDragOverItem] = useState(null);
 
+  // State for custom themes
+  const [customThemes, setCustomThemes] = useState([]);
+  const [showThemeManager, setShowThemeManager] = useState(false);
+  const [newTheme, setNewTheme] = useState({ name: '', emoji: '' });
+
+  // Default themes (always available)
+  const defaultThemes = [
+    { value: 'birthday', label: 'Birthday', emoji: '🎂', isDefault: true },
+    { value: 'cityconnect', label: 'City Connect', emoji: '🏝️', isDefault: true },
+    { value: 'holiday', label: 'Holiday', emoji: '🎉', isDefault: true },
+    { value: 'special', label: 'Special Event', emoji: '⭐', isDefault: true }
+  ];
+
+  // Combine default and custom themes
+  const themeOptions = [...defaultThemes, ...customThemes];
+
   // ========================================
   // FIREBASE READ OPTIMIZATION WITH CACHING
   // ========================================
@@ -86,9 +102,60 @@ const SportsEditorialCalendar = () => {
     setLoading(false);
   };
 
+  // Load custom themes from Firebase
+  const loadCustomThemes = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'customThemes'));
+      const themes = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+      setCustomThemes(themes);
+      console.log('✅ Loaded ' + themes.length + ' custom themes');
+    } catch (error) {
+      console.error('Error loading themes:', error);
+    }
+  };
+
+  // Add a new custom theme
+  const handleAddTheme = async () => {
+    if (!newTheme.name || !newTheme.emoji) {
+      alert('Please enter both a name and an emoji');
+      return;
+    }
+
+    try {
+      const themeData = {
+        value: newTheme.name.toLowerCase().replace(/\s+/g, '_'),
+        label: newTheme.name,
+        emoji: newTheme.emoji,
+        isDefault: false
+      };
+
+      const docRef = await addDoc(collection(db, 'customThemes'), themeData);
+      setCustomThemes(prev => [...prev, { ...themeData, id: docRef.id }]);
+      setNewTheme({ name: '', emoji: '' });
+      alert('Theme created successfully!');
+    } catch (error) {
+      console.error('Error adding theme:', error);
+      alert('Error creating theme. Please try again.');
+    }
+  };
+
+  // Delete a custom theme
+  const handleDeleteTheme = async (themeId) => {
+    if (!confirm('Delete this theme?')) return;
+
+    try {
+      await deleteDoc(doc(db, 'customThemes', themeId));
+      setCustomThemes(prev => prev.filter(t => t.id !== themeId));
+    } catch (error) {
+      console.error('Error deleting theme:', error);
+      alert('Error deleting theme. Please try again.');
+    }
+  };
+
   // Initial load on mount
   useEffect(() => {
     loadCalendarData();
+    loadCustomThemes();
   }, []);
 
   // Debounced cache update function (prevents rapid successive writes)
@@ -173,15 +240,6 @@ const SportsEditorialCalendar = () => {
     { value: 'sponsored', label: 'SPONSORED', color: '#0891b2' },
     { value: 'birthday', label: 'BIRTHDAY', color: '#ec4899' }
   ];
-
-  // Day theme options with emojis
-  const themeOptions = [
-    { value: 'birthday', label: 'Birthday', emoji: '🎂' },
-    { value: 'cityconnect', label: 'City Connect', emoji: '🏝️' },
-    { value: 'holiday', label: 'Holiday', emoji: '🎉' },
-    { value: 'special', label: 'Special Event', emoji: '⭐' }
-  ];
-
   const statusOptions = ['planned', 'in-progress', 'review', 'completed'];
 
   const getDaysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
@@ -1200,7 +1258,116 @@ const SportsEditorialCalendar = () => {
     <div className="min-h-screen bg-zinc-950 text-white">
       {/* Day Modal */}
       <DayModal />
-      
+
+      {/* Theme Manager Modal */}
+      {showThemeManager && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-zinc-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                MANAGE THEMES
+              </h3>
+              <button
+                onClick={() => setShowThemeManager(false)}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Create New Theme */}
+            <div className="bg-zinc-800 rounded-lg p-4 mb-6">
+              <h4 className="text-lg font-semibold mb-4" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                CREATE NEW THEME
+              </h4>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="text"
+                  value={newTheme.name}
+                  onChange={(e) => setNewTheme({ ...newTheme, name: e.target.value })}
+                  placeholder="Theme name (e.g., Team Event)"
+                  className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <input
+                  type="text"
+                  value={newTheme.emoji}
+                  onChange={(e) => setNewTheme({ ...newTheme, emoji: e.target.value })}
+                  placeholder="Emoji (e.g., 🎯)"
+                  className="w-24 bg-zinc-700 border border-zinc-600 rounded-lg px-4 py-2 text-center text-2xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  maxLength={2}
+                />
+                <button
+                  onClick={handleAddTheme}
+                  className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-all"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  ADD
+                </button>
+              </div>
+              <p className="text-xs text-zinc-400 mt-2">
+                💡 Tip: Copy emoji from{' '}
+                <a
+                  href="https://emojipedia.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-400 hover:text-purple-300"
+                >
+                  Emojipedia
+                </a>
+              </p>
+            </div>
+
+            {/* Theme List */}
+            <div className="space-y-2">
+              <h4 className="text-lg font-semibold mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                YOUR THEMES
+              </h4>
+
+              {/* Default Themes */}
+              {defaultThemes.map(theme => (
+                <div
+                  key={theme.value}
+                  className="bg-zinc-800/50 border border-zinc-700 rounded-lg p-3 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{theme.emoji}</span>
+                    <span className="font-semibold">{theme.label}</span>
+                    <span className="text-xs text-zinc-500 bg-zinc-700 px-2 py-1 rounded">DEFAULT</span>
+                  </div>
+                </div>
+              ))}
+
+              {/* Custom Themes */}
+              {customThemes.map(theme => (
+                <div
+                  key={theme.id}
+                  className="bg-zinc-800 border border-zinc-600 rounded-lg p-3 flex items-center justify-between group hover:bg-zinc-750 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{theme.emoji}</span>
+                    <span className="font-semibold">{theme.label}</span>
+                    <span className="text-xs text-purple-400 bg-purple-900/30 px-2 py-1 rounded">CUSTOM</span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteTheme(theme.id)}
+                    className="opacity-0 group-hover:opacity-100 p-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-all"
+                    title="Delete theme"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+
+              {customThemes.length === 0 && (
+                <div className="text-center py-8 text-zinc-500">
+                  <p>No custom themes yet. Create one above!</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header with Background */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-red-700/40 via-zinc-900 to-zinc-950"></div>
@@ -1253,6 +1420,16 @@ const SportsEditorialCalendar = () => {
             >
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
               <span className="hidden sm:inline">REFRESH</span>
+            </button>
+            {/* Manage Themes Button */}
+            <button
+              onClick={() => setShowThemeManager(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-purple-700 hover:bg-purple-600 text-white font-bold rounded-lg transition-all"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
+              title="Manage custom themes"
+            >
+              <Zap size={18} />
+              <span className="hidden sm:inline">THEMES</span>
             </button>
             <button
               onClick={() => {

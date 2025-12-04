@@ -46,6 +46,11 @@ const SportsEditorialCalendar = () => {
   const [newObligationType, setNewObligationType] = useState('reel');
   const [newObligationCount, setNewObligationCount] = useState(1);
 
+  // State for sponsored campaigns (separate collection)
+  const [sponsoredCampaigns, setSponsoredCampaigns] = useState([]);
+  const [showCampaignManager, setShowCampaignManager] = useState(false);
+  const [newCampaign, setNewCampaign] = useState({ name: '', sponsorName: '', sponsorType: '' });
+
   // Default themes (always available)
   const defaultThemes = [
     { value: 'birthday', label: 'Birthday', emoji: '🎂', isDefault: true },
@@ -163,9 +168,12 @@ const SportsEditorialCalendar = () => {
   // ========================================
   // All filtering happens on local state (0 additional Firebase reads!)
 
-  // Get all sponsored items from local state
-  const getSponsoredItems = () => {
-    return calendarItems.filter(item => item.isSponsored);
+  // Get all sponsored campaigns with their linked items
+  const getSponsoredCampaignsWithItems = () => {
+    return sponsoredCampaigns.map(campaign => ({
+      ...campaign,
+      items: calendarItems.filter(item => item.sponsorCampaignId === campaign.id)
+    }));
   };
 
   // Calculate progress for a specific obligation type
@@ -177,25 +185,25 @@ const SportsEditorialCalendar = () => {
     return { required, completed, percentage };
   };
 
-  // Add or update an obligation for a sponsored item
-  const handleAddObligation = async (itemId, obligationType, requiredCount) => {
+  // Add or update an obligation for a campaign
+  const handleAddObligation = async (campaignId, obligationType, requiredCount) => {
     try {
-      const item = calendarItems.find(i => i.id === itemId);
-      if (!item) return;
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign) return;
 
       const updatedObligations = {
-        ...item.obligations,
+        ...(campaign.obligations || {}),
         [obligationType]: {
           required: requiredCount,
-          posts: item.obligations?.[obligationType]?.posts || []
+          posts: campaign.obligations?.[obligationType]?.posts || []
         }
       };
 
-      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
 
       // Optimistically update local state
-      setCalendarItems(items => items.map(i =>
-        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
       ));
     } catch (error) {
       console.error('Error adding obligation:', error);
@@ -203,36 +211,36 @@ const SportsEditorialCalendar = () => {
     }
   };
 
-  // Add a post link to an obligation
-  const handleAddPostLink = async (itemId, obligationType, postUrl) => {
+  // Add a post link to a campaign obligation
+  const handleAddPostLink = async (campaignId, obligationType, postUrl) => {
     if (!postUrl || !postUrl.trim()) {
       alert('Please enter a valid URL');
       return;
     }
 
     try {
-      const item = calendarItems.find(i => i.id === itemId);
-      if (!item || !item.obligations?.[obligationType]) return;
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign || !campaign.obligations?.[obligationType]) return;
 
       const newPost = {
         url: postUrl.trim(),
         dateAdded: new Date().toISOString()
       };
 
-      const updatedPosts = [...(item.obligations[obligationType].posts || []), newPost];
+      const updatedPosts = [...(campaign.obligations[obligationType].posts || []), newPost];
       const updatedObligations = {
-        ...item.obligations,
+        ...campaign.obligations,
         [obligationType]: {
-          ...item.obligations[obligationType],
+          ...campaign.obligations[obligationType],
           posts: updatedPosts
         }
       };
 
-      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
 
       // Optimistically update local state
-      setCalendarItems(items => items.map(i =>
-        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
       ));
     } catch (error) {
       console.error('Error adding post link:', error);
@@ -240,26 +248,26 @@ const SportsEditorialCalendar = () => {
     }
   };
 
-  // Delete a post link from an obligation
-  const handleDeletePostLink = async (itemId, obligationType, postIndex) => {
+  // Delete a post link from a campaign obligation
+  const handleDeletePostLink = async (campaignId, obligationType, postIndex) => {
     try {
-      const item = calendarItems.find(i => i.id === itemId);
-      if (!item || !item.obligations?.[obligationType]) return;
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign || !campaign.obligations?.[obligationType]) return;
 
-      const updatedPosts = item.obligations[obligationType].posts.filter((_, idx) => idx !== postIndex);
+      const updatedPosts = campaign.obligations[obligationType].posts.filter((_, idx) => idx !== postIndex);
       const updatedObligations = {
-        ...item.obligations,
+        ...campaign.obligations,
         [obligationType]: {
-          ...item.obligations[obligationType],
+          ...campaign.obligations[obligationType],
           posts: updatedPosts
         }
       };
 
-      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
 
       // Optimistically update local state
-      setCalendarItems(items => items.map(i =>
-        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
       ));
     } catch (error) {
       console.error('Error deleting post link:', error);
@@ -267,22 +275,22 @@ const SportsEditorialCalendar = () => {
     }
   };
 
-  // Delete an entire obligation type
-  const handleDeleteObligation = async (itemId, obligationType) => {
+  // Delete an entire obligation type from campaign
+  const handleDeleteObligation = async (campaignId, obligationType) => {
     if (!confirm(`Delete ${obligationType} obligation?`)) return;
 
     try {
-      const item = calendarItems.find(i => i.id === itemId);
-      if (!item) return;
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign) return;
 
-      const updatedObligations = { ...item.obligations };
+      const updatedObligations = { ...(campaign.obligations || {}) };
       delete updatedObligations[obligationType];
 
-      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
 
       // Optimistically update local state
-      setCalendarItems(items => items.map(i =>
-        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
       ));
     } catch (error) {
       console.error('Error deleting obligation:', error);
@@ -290,10 +298,79 @@ const SportsEditorialCalendar = () => {
     }
   };
 
+  // Load sponsored campaigns from Firebase
+  const loadSponsoredCampaigns = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'sponsoredCampaigns'));
+      const campaigns = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+      setSponsoredCampaigns(campaigns);
+      console.log('✅ Loaded ' + campaigns.length + ' sponsored campaigns');
+    } catch (error) {
+      console.error('Error loading campaigns:', error);
+    }
+  };
+
+  // Create new sponsored campaign
+  const handleCreateCampaign = async () => {
+    if (!newCampaign.name || !newCampaign.sponsorName) {
+      alert('Please enter campaign name and sponsor name');
+      return;
+    }
+
+    try {
+      const campaignData = {
+        name: newCampaign.name,
+        sponsorName: newCampaign.sponsorName,
+        sponsorType: newCampaign.sponsorType || 'Brand Partnership',
+        obligations: {}, // Will be added later
+        createdAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, 'sponsoredCampaigns'), campaignData);
+      setSponsoredCampaigns(prev => [...prev, { ...campaignData, id: docRef.id }]);
+      setNewCampaign({ name: '', sponsorName: '', sponsorType: '' });
+      alert('Campaign created successfully!');
+    } catch (error) {
+      console.error('Error creating campaign:', error);
+      alert('Error creating campaign. Please try again.');
+    }
+  };
+
+  // Delete sponsored campaign
+  const handleDeleteCampaign = async (campaignId) => {
+    if (!confirm('Delete this campaign? All linked items will be unlinked.')) return;
+
+    try {
+      await deleteDoc(doc(db, 'sponsoredCampaigns', campaignId));
+
+      // Unlink all calendar items from this campaign
+      const linkedItems = calendarItems.filter(item => item.sponsorCampaignId === campaignId);
+      const batch = writeBatch(db);
+      linkedItems.forEach(item => {
+        const itemRef = doc(db, 'calendarItems', item.id);
+        batch.update(itemRef, { sponsorCampaignId: null, isSponsored: false });
+      });
+      await batch.commit();
+
+      setSponsoredCampaigns(prev => prev.filter(c => c.id !== campaignId));
+
+      // Update local calendar items
+      setCalendarItems(items => items.map(item =>
+        item.sponsorCampaignId === campaignId
+          ? { ...item, sponsorCampaignId: null, isSponsored: false }
+          : item
+      ));
+    } catch (error) {
+      console.error('Error deleting campaign:', error);
+      alert('Error deleting campaign. Please try again.');
+    }
+  };
+
   // Initial load on mount
   useEffect(() => {
     loadCalendarData();
     loadCustomThemes();
+    loadSponsoredCampaigns();
   }, []);
 
   // Debounced cache update function (prevents rapid successive writes)
@@ -360,10 +437,7 @@ const SportsEditorialCalendar = () => {
     links: '',
     themes: [],
     order: Date.now(),
-    isSponsored: false,
-    sponsorType: '',
-    sponsorName: '',
-    obligations: {} // { reel: { required: 4, completed: 0, posts: [] }, story: { required: 3, completed: 0, posts: [] } }
+    sponsorCampaignId: null // Links to campaign in sponsoredCampaigns collection
   });
 
   const months = [
@@ -413,7 +487,7 @@ const SportsEditorialCalendar = () => {
           // Optimistically add to local state (0 additional reads)
           setCalendarItems(items => [...items, { ...newItem, id: docRef.id }]);
         }
-        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), isSponsored: false, sponsorType: '', sponsorName: '', obligations: {} });
+        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), sponsorCampaignId: null });
         setShowImportModal(false);
       } catch (error) {
         console.error('Error saving item:', error);
@@ -529,10 +603,7 @@ const SportsEditorialCalendar = () => {
       links: '',
       themes: [],
       order: Date.now(),
-      isSponsored: false,
-      sponsorType: '',
-      sponsorName: '',
-      obligations: {}
+      sponsorCampaignId: null
     });
     setShowImportModal(true);
   };
@@ -734,7 +805,7 @@ const SportsEditorialCalendar = () => {
                       hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0
                       ${isDragging ? 'opacity-50 scale-95' : ''}
                       ${isDragOver ? 'ring-2 ring-white' : ''}
-                      ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
+                      ${item.sponsorCampaignId ? 'ring-2 ring-cyan-400/60' : ''}`}
                     style={{
                       fontFamily: "'Barlow Condensed', sans-serif",
                       fontSize: '12px'
@@ -743,10 +814,10 @@ const SportsEditorialCalendar = () => {
                       e.stopPropagation();
                       handleEdit(item);
                     }}
-                    title={`${item.title} (drag to reorder)${item.isSponsored ? ' - SPONSORED' : ''}`}
+                    title={`${item.title} (drag to reorder)${item.sponsorCampaignId ? ' - SPONSORED' : ''}`}
                   >
                     <span className="truncate flex items-center gap-1">
-                      {item.isSponsored && <DollarSign size={12} className="flex-shrink-0" />}
+                      {item.sponsorCampaignId && <DollarSign size={12} className="flex-shrink-0" />}
                       {item.title}
                     </span>
                     {showSmallDesc && item.notes && (
@@ -897,7 +968,7 @@ const SportsEditorialCalendar = () => {
                           className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase cursor-move hover:opacity-90 transition-all flex items-center gap-1
                             ${isDragging ? 'opacity-50 scale-95' : ''}
                             ${isDragOver ? 'ring-2 ring-white' : ''}
-                            ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
+                            ${item.sponsorCampaignId ? 'ring-2 ring-cyan-400/60' : ''}`}
                           style={{
                             fontFamily: "'Barlow Condensed', sans-serif"
                           }}
@@ -905,9 +976,9 @@ const SportsEditorialCalendar = () => {
                             e.stopPropagation();
                             handleEdit(item);
                           }}
-                          title={`${item.title} (drag to reorder)${item.isSponsored ? ' - SPONSORED' : ''}`}
+                          title={`${item.title} (drag to reorder)${item.sponsorCampaignId ? ' - SPONSORED' : ''}`}
                         >
-                          {item.isSponsored && <DollarSign size={12} className="flex-shrink-0" />}
+                          {item.sponsorCampaignId && <DollarSign size={12} className="flex-shrink-0" />}
                           <span className="truncate">{item.title}</span>
                         </div>
                         {item.assignees && item.assignees.length > 0 && (
@@ -1023,7 +1094,7 @@ const SportsEditorialCalendar = () => {
                     ${isDragging ? 'opacity-50 scale-95' : ''}
                     ${isDragOver ? 'ring-2 ring-red-500' : ''}
                     ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
-                  title={`Drag to reorder${item.isSponsored ? ' - SPONSORED' : ''}`}
+                  title={`Drag to reorder${item.sponsorCampaignId ? ' - SPONSORED' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -1037,7 +1108,7 @@ const SportsEditorialCalendar = () => {
                         >
                           {typeLabel}
                         </span>
-                        {item.isSponsored && (
+                        {item.sponsorCampaignId && (
                           <span className="bg-cyan-600 text-white text-sm px-3 py-1 rounded font-semibold inline-flex items-center gap-1">
                             <DollarSign size={14} />
                             SPONSORED
@@ -1293,8 +1364,8 @@ const SportsEditorialCalendar = () => {
                     className={`bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-all group cursor-move
                       ${isDragging ? 'opacity-50 scale-95' : ''}
                       ${isDragOver ? 'ring-2 ring-red-500' : ''}
-                      ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
-                    title={`Drag to reorder${item.isSponsored ? ' - SPONSORED' : ''}`}
+                      ${item.sponsorCampaignId ? 'ring-2 ring-cyan-400/60' : ''}`}
+                    title={`Drag to reorder${item.sponsorCampaignId ? ' - SPONSORED' : ''}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
@@ -1873,7 +1944,7 @@ const SportsEditorialCalendar = () => {
             <button
               onClick={() => {
                 setEditingItem(null);
-                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), isSponsored: false, sponsorType: '', sponsorName: '', obligations: {} });
+                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), sponsorCampaignId: null });
                 setShowImportModal(true);
               }}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700

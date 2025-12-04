@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, RefreshCw } from 'lucide-react';
+import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, RefreshCw, DollarSign, Link as LinkIcon } from 'lucide-react';
 import { db } from './firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { initialCalendarItems } from './initialData';
@@ -39,6 +39,12 @@ const SportsEditorialCalendar = () => {
   const [customThemes, setCustomThemes] = useState([]);
   const [showThemeManager, setShowThemeManager] = useState(false);
   const [newTheme, setNewTheme] = useState({ name: '', emoji: '' });
+
+  // State for sponsored posts
+  const [showSponsoredView, setShowSponsoredView] = useState(false);
+  const [editingSponsoredItem, setEditingSponsoredItem] = useState(null);
+  const [newObligationType, setNewObligationType] = useState('reel');
+  const [newObligationCount, setNewObligationCount] = useState(1);
 
   // Default themes (always available)
   const defaultThemes = [
@@ -152,6 +158,138 @@ const SportsEditorialCalendar = () => {
     }
   };
 
+  // ========================================
+  // SPONSORED POST TRACKING FUNCTIONS
+  // ========================================
+  // All filtering happens on local state (0 additional Firebase reads!)
+
+  // Get all sponsored items from local state
+  const getSponsoredItems = () => {
+    return calendarItems.filter(item => item.isSponsored);
+  };
+
+  // Calculate progress for a specific obligation type
+  const calculateProgress = (obligations, type) => {
+    if (!obligations || !obligations[type]) return { required: 0, completed: 0, percentage: 0 };
+    const { required, posts = [] } = obligations[type];
+    const completed = posts.length;
+    const percentage = required > 0 ? Math.round((completed / required) * 100) : 0;
+    return { required, completed, percentage };
+  };
+
+  // Add or update an obligation for a sponsored item
+  const handleAddObligation = async (itemId, obligationType, requiredCount) => {
+    try {
+      const item = calendarItems.find(i => i.id === itemId);
+      if (!item) return;
+
+      const updatedObligations = {
+        ...item.obligations,
+        [obligationType]: {
+          required: requiredCount,
+          posts: item.obligations?.[obligationType]?.posts || []
+        }
+      };
+
+      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setCalendarItems(items => items.map(i =>
+        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      ));
+    } catch (error) {
+      console.error('Error adding obligation:', error);
+      alert('Error adding obligation. Please try again.');
+    }
+  };
+
+  // Add a post link to an obligation
+  const handleAddPostLink = async (itemId, obligationType, postUrl) => {
+    if (!postUrl || !postUrl.trim()) {
+      alert('Please enter a valid URL');
+      return;
+    }
+
+    try {
+      const item = calendarItems.find(i => i.id === itemId);
+      if (!item || !item.obligations?.[obligationType]) return;
+
+      const newPost = {
+        url: postUrl.trim(),
+        dateAdded: new Date().toISOString()
+      };
+
+      const updatedPosts = [...(item.obligations[obligationType].posts || []), newPost];
+      const updatedObligations = {
+        ...item.obligations,
+        [obligationType]: {
+          ...item.obligations[obligationType],
+          posts: updatedPosts
+        }
+      };
+
+      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setCalendarItems(items => items.map(i =>
+        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      ));
+    } catch (error) {
+      console.error('Error adding post link:', error);
+      alert('Error adding post link. Please try again.');
+    }
+  };
+
+  // Delete a post link from an obligation
+  const handleDeletePostLink = async (itemId, obligationType, postIndex) => {
+    try {
+      const item = calendarItems.find(i => i.id === itemId);
+      if (!item || !item.obligations?.[obligationType]) return;
+
+      const updatedPosts = item.obligations[obligationType].posts.filter((_, idx) => idx !== postIndex);
+      const updatedObligations = {
+        ...item.obligations,
+        [obligationType]: {
+          ...item.obligations[obligationType],
+          posts: updatedPosts
+        }
+      };
+
+      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setCalendarItems(items => items.map(i =>
+        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      ));
+    } catch (error) {
+      console.error('Error deleting post link:', error);
+      alert('Error deleting post link. Please try again.');
+    }
+  };
+
+  // Delete an entire obligation type
+  const handleDeleteObligation = async (itemId, obligationType) => {
+    if (!confirm(`Delete ${obligationType} obligation?`)) return;
+
+    try {
+      const item = calendarItems.find(i => i.id === itemId);
+      if (!item) return;
+
+      const updatedObligations = { ...item.obligations };
+      delete updatedObligations[obligationType];
+
+      await updateDoc(doc(db, 'calendarItems', itemId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setCalendarItems(items => items.map(i =>
+        i.id === itemId ? { ...i, obligations: updatedObligations } : i
+      ));
+    } catch (error) {
+      console.error('Error deleting obligation:', error);
+      alert('Error deleting obligation. Please try again.');
+    }
+  };
+
   // Initial load on mount
   useEffect(() => {
     loadCalendarData();
@@ -221,7 +359,11 @@ const SportsEditorialCalendar = () => {
     notes: '',
     links: '',
     themes: [],
-    order: Date.now()
+    order: Date.now(),
+    isSponsored: false,
+    sponsorType: '',
+    sponsorName: '',
+    obligations: {} // { reel: { required: 4, completed: 0, posts: [] }, story: { required: 3, completed: 0, posts: [] } }
   });
 
   const months = [
@@ -271,7 +413,7 @@ const SportsEditorialCalendar = () => {
           // Optimistically add to local state (0 additional reads)
           setCalendarItems(items => [...items, { ...newItem, id: docRef.id }]);
         }
-        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now() });
+        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), isSponsored: false, sponsorType: '', sponsorName: '', obligations: {} });
         setShowImportModal(false);
       } catch (error) {
         console.error('Error saving item:', error);
@@ -386,7 +528,11 @@ const SportsEditorialCalendar = () => {
       notes: '',
       links: '',
       themes: [],
-      order: Date.now()
+      order: Date.now(),
+      isSponsored: false,
+      sponsorType: '',
+      sponsorName: '',
+      obligations: {}
     });
     setShowImportModal(true);
   };
@@ -587,7 +733,8 @@ const SportsEditorialCalendar = () => {
                     className={`${colors.bg} ${colors.text} px-2 py-1 rounded cursor-move
                       hover:opacity-90 transition-all font-semibold tracking-wide uppercase flex flex-col gap-0 min-w-0
                       ${isDragging ? 'opacity-50 scale-95' : ''}
-                      ${isDragOver ? 'ring-2 ring-white' : ''}`}
+                      ${isDragOver ? 'ring-2 ring-white' : ''}
+                      ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
                     style={{
                       fontFamily: "'Barlow Condensed', sans-serif",
                       fontSize: '12px'
@@ -596,9 +743,12 @@ const SportsEditorialCalendar = () => {
                       e.stopPropagation();
                       handleEdit(item);
                     }}
-                    title={`${item.title} (drag to reorder)`}
+                    title={`${item.title} (drag to reorder)${item.isSponsored ? ' - SPONSORED' : ''}`}
                   >
-                    <span className="truncate">{item.title}</span>
+                    <span className="truncate flex items-center gap-1">
+                      {item.isSponsored && <DollarSign size={12} className="flex-shrink-0" />}
+                      {item.title}
+                    </span>
                     {showSmallDesc && item.notes && (
                       <span className="text-[11px] text-zinc-300 truncate font-normal normal-case" style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0' }}>
                         {item.notes}
@@ -744,9 +894,10 @@ const SportsEditorialCalendar = () => {
                           onDragOver={(e) => handleDragOver(e, item)}
                           onDrop={(e) => handleDrop(e, item)}
                           onDragEnd={handleDragEnd}
-                          className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase truncate cursor-move hover:opacity-90 transition-all
+                          className={`${colors.bg} ${colors.text} px-2 py-1 rounded text-xs font-semibold uppercase cursor-move hover:opacity-90 transition-all flex items-center gap-1
                             ${isDragging ? 'opacity-50 scale-95' : ''}
-                            ${isDragOver ? 'ring-2 ring-white' : ''}`}
+                            ${isDragOver ? 'ring-2 ring-white' : ''}
+                            ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
                           style={{
                             fontFamily: "'Barlow Condensed', sans-serif"
                           }}
@@ -754,9 +905,10 @@ const SportsEditorialCalendar = () => {
                             e.stopPropagation();
                             handleEdit(item);
                           }}
-                          title={`${item.title} (drag to reorder)`}
+                          title={`${item.title} (drag to reorder)${item.isSponsored ? ' - SPONSORED' : ''}`}
                         >
-                          {item.title}
+                          {item.isSponsored && <DollarSign size={12} className="flex-shrink-0" />}
+                          <span className="truncate">{item.title}</span>
                         </div>
                         {item.assignees && item.assignees.length > 0 && (
                           <div className="flex gap-0.5 px-1">
@@ -869,20 +1021,29 @@ const SportsEditorialCalendar = () => {
                   onDragEnd={handleDragEnd}
                   className={`bg-zinc-900 rounded-lg p-6 hover:bg-zinc-800 transition-all group cursor-move
                     ${isDragging ? 'opacity-50 scale-95' : ''}
-                    ${isDragOver ? 'ring-2 ring-red-500' : ''}`}
-                  title="Drag to reorder"
+                    ${isDragOver ? 'ring-2 ring-red-500' : ''}
+                    ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
+                  title={`Drag to reorder${item.isSponsored ? ' - SPONSORED' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       {/* Type Badge */}
-                      <span
-                        className={`${colors.bg} ${colors.text} text-sm px-3 py-1 rounded font-semibold inline-block mb-3`}
-                        style={{
-                          fontFamily: "'Barlow Condensed', sans-serif"
-                        }}
-                      >
-                        {typeLabel}
-                      </span>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span
+                          className={`${colors.bg} ${colors.text} text-sm px-3 py-1 rounded font-semibold inline-block`}
+                          style={{
+                            fontFamily: "'Barlow Condensed', sans-serif"
+                          }}
+                        >
+                          {typeLabel}
+                        </span>
+                        {item.isSponsored && (
+                          <span className="bg-cyan-600 text-white text-sm px-3 py-1 rounded font-semibold inline-flex items-center gap-1">
+                            <DollarSign size={14} />
+                            SPONSORED
+                          </span>
+                        )}
+                      </div>
 
                       {/* Title */}
                       <h4 className="text-white font-bold text-2xl mb-2" style={{ fontFamily: "'Oswald', sans-serif" }}>
@@ -1131,20 +1292,29 @@ const SportsEditorialCalendar = () => {
                     onDragEnd={handleDragEnd}
                     className={`bg-zinc-800 rounded-lg p-4 hover:bg-zinc-750 transition-all group cursor-move
                       ${isDragging ? 'opacity-50 scale-95' : ''}
-                      ${isDragOver ? 'ring-2 ring-red-500' : ''}`}
-                    title="Drag to reorder"
+                      ${isDragOver ? 'ring-2 ring-red-500' : ''}
+                      ${item.isSponsored ? 'ring-2 ring-cyan-400/60' : ''}`}
+                    title={`Drag to reorder${item.isSponsored ? ' - SPONSORED' : ''}`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
                         {/* Type Badge */}
-                        <span
-                          className={`${colors.bg} ${colors.text} text-xs px-2 py-1 rounded font-semibold inline-block mb-2`}
-                          style={{
-                            fontFamily: "'Barlow Condensed', sans-serif"
-                          }}
-                        >
-                          {typeLabel}
-                        </span>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span
+                            className={`${colors.bg} ${colors.text} text-xs px-2 py-1 rounded font-semibold inline-block`}
+                            style={{
+                              fontFamily: "'Barlow Condensed', sans-serif"
+                            }}
+                          >
+                            {typeLabel}
+                          </span>
+                          {item.isSponsored && (
+                            <span className="bg-cyan-600 text-white text-xs px-2 py-1 rounded font-semibold inline-flex items-center gap-1">
+                              <DollarSign size={12} />
+                              SPONSORED
+                            </span>
+                          )}
+                        </div>
 
                         {/* Title */}
                         <h4 className="text-white font-bold text-lg" style={{ fontFamily: "'Oswald', sans-serif" }}>
@@ -1258,6 +1428,265 @@ const SportsEditorialCalendar = () => {
     <div className="min-h-screen bg-zinc-950 text-white">
       {/* Day Modal */}
       <DayModal />
+
+      {/* Sponsored Posts View Modal */}
+      {showSponsoredView && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-zinc-700">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl sm:text-2xl font-bold flex items-center gap-2" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                <DollarSign size={28} className="text-cyan-400" />
+                SPONSORED POSTS
+              </h3>
+              <button
+                onClick={() => setShowSponsoredView(false)}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Sponsored Items List */}
+            {getSponsoredItems().length === 0 ? (
+              <div className="text-center py-12 text-zinc-400">
+                <DollarSign size={48} className="mx-auto mb-4 opacity-50" />
+                <p className="text-lg mb-2">No sponsored posts yet</p>
+                <p className="text-sm">Mark calendar items as sponsored to track obligations and completed posts</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {getSponsoredItems().map(item => {
+                  const dateObj = new Date(item.date + 'T12:00:00');
+                  const formattedDate = dateObj.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  });
+                  const isExpanded = editingSponsoredItem === item.id;
+                  const obligations = item.obligations || {};
+                  const obligationTypes = Object.keys(obligations);
+                  const totalRequired = obligationTypes.reduce((sum, type) => sum + (obligations[type]?.required || 0), 0);
+                  const totalCompleted = obligationTypes.reduce((sum, type) => sum + (obligations[type]?.posts?.length || 0), 0);
+                  const overallProgress = totalRequired > 0 ? Math.round((totalCompleted / totalRequired) * 100) : 0;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="bg-zinc-800 rounded-lg border-2 border-cyan-600/30 hover:border-cyan-600/50 transition-all"
+                    >
+                      {/* Card Header */}
+                      <div className="p-4">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <DollarSign size={20} className="text-cyan-400" />
+                              <h4 className="text-lg font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                                {item.title || 'Untitled'}
+                              </h4>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
+                              <span className="flex items-center gap-1">
+                                <Calendar size={14} />
+                                {formattedDate}
+                              </span>
+                              {item.sponsorName && (
+                                <span className="bg-cyan-900/30 text-cyan-300 px-2 py-0.5 rounded">
+                                  {item.sponsorName}
+                                </span>
+                              )}
+                              {item.sponsorType && (
+                                <span className="bg-zinc-700 text-zinc-300 px-2 py-0.5 rounded text-xs">
+                                  {item.sponsorType}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setShowSponsoredView(false);
+                              handleEdit(item);
+                            }}
+                            className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-semibold transition-colors"
+                          >
+                            EDIT
+                          </button>
+                        </div>
+
+                        {/* Overall Progress */}
+                        {obligationTypes.length > 0 && (
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between text-sm mb-1">
+                              <span className="text-zinc-400">Overall Progress</span>
+                              <span className="font-bold text-cyan-400">{totalCompleted}/{totalRequired} posts ({overallProgress}%)</span>
+                            </div>
+                            <div className="w-full bg-zinc-700 rounded-full h-2">
+                              <div
+                                className="bg-gradient-to-r from-cyan-600 to-cyan-400 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${overallProgress}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Expand/Collapse Button */}
+                        <button
+                          onClick={() => setEditingSponsoredItem(isExpanded ? null : item.id)}
+                          className="w-full mt-2 py-2 bg-zinc-700/50 hover:bg-zinc-700 rounded-lg text-sm font-semibold transition-colors"
+                          style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                        >
+                          {isExpanded ? '▲ COLLAPSE DETAILS' : '▼ EXPAND DETAILS'}
+                        </button>
+                      </div>
+
+                      {/* Expanded Details */}
+                      {isExpanded && (
+                        <div className="border-t border-zinc-700 p-4 space-y-4">
+                          {/* Existing Obligations */}
+                          {obligationTypes.length > 0 && (
+                            <div className="space-y-3">
+                              <h5 className="text-sm font-bold text-zinc-300 uppercase" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                                Obligations
+                              </h5>
+                              {obligationTypes.map(type => {
+                                const progress = calculateProgress(obligations, type);
+                                return (
+                                  <div key={type} className="bg-zinc-900 rounded-lg p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-base font-bold uppercase text-cyan-400">{type}</span>
+                                        <span className="text-sm text-zinc-400">
+                                          {progress.completed}/{progress.required} completed
+                                        </span>
+                                      </div>
+                                      <button
+                                        onClick={() => handleDeleteObligation(item.id, type)}
+                                        className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors"
+                                        title="Delete obligation"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </div>
+
+                                    {/* Progress Bar */}
+                                    <div className="w-full bg-zinc-800 rounded-full h-2 mb-3">
+                                      <div
+                                        className={`h-2 rounded-full transition-all duration-300 ${
+                                          progress.percentage === 100 ? 'bg-green-500' :
+                                          progress.percentage >= 50 ? 'bg-cyan-500' : 'bg-yellow-500'
+                                        }`}
+                                        style={{ width: `${progress.percentage}%` }}
+                                      ></div>
+                                    </div>
+
+                                    {/* Post Links */}
+                                    {obligations[type].posts && obligations[type].posts.length > 0 && (
+                                      <div className="space-y-2 mb-3">
+                                        {obligations[type].posts.map((post, idx) => (
+                                          <div key={idx} className="flex items-center gap-2 bg-zinc-800 p-2 rounded">
+                                            <LinkIcon size={14} className="text-cyan-400 flex-shrink-0" />
+                                            <a
+                                              href={post.url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-sm text-cyan-400 hover:text-cyan-300 truncate flex-1"
+                                            >
+                                              {post.url}
+                                            </a>
+                                            <span className="text-xs text-zinc-500 flex-shrink-0">
+                                              {new Date(post.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            </span>
+                                            <button
+                                              onClick={() => handleDeletePostLink(item.id, type, idx)}
+                                              className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors flex-shrink-0"
+                                              title="Delete link"
+                                            >
+                                              <Trash2 size={12} />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Add Post Link Form */}
+                                    {progress.completed < progress.required && (
+                                      <div className="flex gap-2">
+                                        <input
+                                          type="url"
+                                          placeholder="Paste post URL..."
+                                          className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                          onKeyPress={(e) => {
+                                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                              handleAddPostLink(item.id, type, e.target.value);
+                                              e.target.value = '';
+                                            }
+                                          }}
+                                        />
+                                        <button
+                                          onClick={(e) => {
+                                            const input = e.target.previousSibling;
+                                            if (input.value.trim()) {
+                                              handleAddPostLink(item.id, type, input.value);
+                                              input.value = '';
+                                            }
+                                          }}
+                                          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded font-semibold text-sm transition-colors"
+                                        >
+                                          ADD
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Add New Obligation */}
+                          <div className="bg-zinc-900 rounded-lg p-3">
+                            <h5 className="text-sm font-bold text-zinc-300 uppercase mb-3" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                              Add New Obligation
+                            </h5>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input
+                                type="text"
+                                placeholder="Type (e.g., reel, story, post)"
+                                value={newObligationType}
+                                onChange={(e) => setNewObligationType(e.target.value.toLowerCase())}
+                                className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              />
+                              <input
+                                type="number"
+                                placeholder="Quantity"
+                                min="1"
+                                value={newObligationCount}
+                                onChange={(e) => setNewObligationCount(parseInt(e.target.value) || 1)}
+                                className="w-24 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (newObligationType.trim()) {
+                                    handleAddObligation(item.id, newObligationType.trim(), newObligationCount);
+                                    setNewObligationType('reel');
+                                    setNewObligationCount(1);
+                                  }
+                                }}
+                                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded font-semibold text-sm transition-colors"
+                              >
+                                ADD
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Theme Manager Modal */}
       {showThemeManager && (
@@ -1431,10 +1860,20 @@ const SportsEditorialCalendar = () => {
               <Zap size={18} />
               <span className="hidden sm:inline">THEMES</span>
             </button>
+            {/* Sponsored Posts Button */}
+            <button
+              onClick={() => setShowSponsoredView(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-cyan-700 hover:bg-cyan-600 text-white font-bold rounded-lg transition-all"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
+              title="View sponsored posts"
+            >
+              <DollarSign size={18} />
+              <span className="hidden sm:inline">SPONSORED</span>
+            </button>
             <button
               onClick={() => {
                 setEditingItem(null);
-                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now() });
+                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), isSponsored: false, sponsorType: '', sponsorName: '', obligations: {} });
                 setShowImportModal(true);
               }}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700
@@ -1716,6 +2155,52 @@ const SportsEditorialCalendar = () => {
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {/* Sponsored Post Section */}
+                <div className="border-t border-zinc-700 pt-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <input
+                      type="checkbox"
+                      id="isSponsored"
+                      checked={newItem.isSponsored || false}
+                      onChange={(e) => setNewItem({ ...newItem, isSponsored: e.target.checked })}
+                      className="w-5 h-5 bg-zinc-800 border-2 border-zinc-600 rounded focus:ring-2 focus:ring-cyan-500"
+                    />
+                    <label htmlFor="isSponsored" className="text-sm font-semibold text-zinc-300 flex items-center gap-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                      <DollarSign size={16} className="text-cyan-400" />
+                      MARK AS SPONSORED POST
+                    </label>
+                  </div>
+
+                  {newItem.isSponsored && (
+                    <div className="space-y-3 bg-zinc-800 rounded-lg p-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>SPONSOR NAME</label>
+                        <input
+                          type="text"
+                          value={newItem.sponsorName || ''}
+                          onChange={(e) => setNewItem({ ...newItem, sponsorName: e.target.value })}
+                          className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          placeholder="e.g., Nike, Coca-Cola..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>SPONSOR TYPE</label>
+                        <input
+                          type="text"
+                          value={newItem.sponsorType || ''}
+                          onChange={(e) => setNewItem({ ...newItem, sponsorType: e.target.value })}
+                          className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          placeholder="e.g., Brand Partnership, Product Placement..."
+                        />
+                      </div>
+                      <p className="text-xs text-cyan-400 flex items-center gap-1">
+                        <DollarSign size={12} />
+                        Add obligations and track posts in the Sponsored view
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>

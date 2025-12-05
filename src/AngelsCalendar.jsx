@@ -54,9 +54,13 @@ const SportsEditorialCalendar = () => {
   // State for multi-platform post grouping
   const [addingUrlToPost, setAddingUrlToPost] = useState(null); // { campaignId, obligationType, postIndex }
 
-  // State for CSV import
+  // State for CSV import (campaigns)
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvPreview, setCsvPreview] = useState(null);
+
+  // State for batch item import
+  const [showBatchImport, setShowBatchImport] = useState(false);
+  const [batchItemsPreview, setBatchItemsPreview] = useState(null);
 
   // Default themes (always available)
   const defaultThemes = [
@@ -583,6 +587,148 @@ const SportsEditorialCalendar = () => {
     } catch (error) {
       console.error('Error importing campaigns:', error);
       alert('Error importing campaigns. Please try again.');
+    }
+  };
+
+  // ========================================
+  // BATCH ITEM IMPORT FUNCTIONS
+  // ========================================
+
+  // Parse date string or generate dates for time period
+  const parseDateOrPeriod = (dateStr, endDateStr, frequency) => {
+    const dates = [];
+
+    if (!endDateStr || !frequency) {
+      // Single date
+      dates.push(dateStr);
+    } else {
+      // Date range with frequency
+      const startDate = new Date(dateStr + 'T12:00:00');
+      const endDate = new Date(endDateStr + 'T12:00:00');
+
+      let currentDate = new Date(startDate);
+
+      while (currentDate <= endDate) {
+        dates.push(currentDate.toISOString().split('T')[0]);
+
+        // Increment based on frequency
+        switch (frequency.toLowerCase()) {
+          case 'daily':
+            currentDate.setDate(currentDate.getDate() + 1);
+            break;
+          case 'weekly':
+            currentDate.setDate(currentDate.getDate() + 7);
+            break;
+          case 'biweekly':
+            currentDate.setDate(currentDate.getDate() + 14);
+            break;
+          case 'monthly':
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            break;
+          default:
+            currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+    }
+
+    return dates;
+  };
+
+  // Parse CSV file for batch item import
+  const handleBatchItemsCsvUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        const lines = text.split('\n').filter(line => line.trim());
+
+        // Parse CSV
+        const items = [];
+        for (let i = 1; i < lines.length; i++) { // Skip header row
+          const parts = lines[i].split(',').map(p => p.trim().replace(/^["']|["']$/g, ''));
+
+          if (parts.length >= 3 && parts[0] && parts[1]) {
+            const startDate = parts[0];
+            const type = parts[1];
+            const title = parts[2];
+            const assignees = parts[3] ? parts[3].split(';').map(a => a.trim()) : [];
+            const status = parts[4] || 'planned';
+            const notes = parts[5] || '';
+            const links = parts[6] || '';
+            const themes = parts[7] ? parts[7].split(';').map(t => t.trim()) : [];
+            const sponsorCampaignId = parts[8] || null;
+            const endDate = parts[9] || null;
+            const frequency = parts[10] || null;
+
+            // Generate dates if time period specified
+            const dates = parseDateOrPeriod(startDate, endDate, frequency);
+
+            // Create item(s) for each date
+            dates.forEach((date, idx) => {
+              const item = {
+                date: date,
+                type: type,
+                title: dates.length > 1 ? `${title} (${idx + 1}/${dates.length})` : title,
+                assignees: assignees,
+                status: status,
+                notes: notes,
+                links: links,
+                themes: themes,
+                sponsorCampaignId: sponsorCampaignId,
+                order: Date.now() + idx
+              };
+              items.push(item);
+            });
+          }
+        }
+
+        if (items.length === 0) {
+          alert('No valid items found in CSV. Please check the format.');
+          return;
+        }
+
+        setBatchItemsPreview(items);
+      } catch (error) {
+        console.error('Error parsing CSV:', error);
+        alert('Error parsing CSV file. Please check the format.');
+      }
+    };
+
+    reader.readAsText(file);
+    event.target.value = ''; // Reset file input
+  };
+
+  // Import calendar items from CSV preview
+  const handleImportBatchItems = async () => {
+    if (!batchItemsPreview || batchItemsPreview.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const newItems = [];
+
+      batchItemsPreview.forEach(itemData => {
+        const docRef = doc(collection(db, 'calendarItems'));
+        batch.set(docRef, itemData);
+        newItems.push({ ...itemData, id: docRef.id });
+      });
+
+      await batch.commit();
+
+      // Update local state
+      setCalendarItems(prev => [...prev, ...newItems]);
+
+      // Update cache
+      updateCacheDebounced([...calendarItems, ...newItems]);
+
+      alert(`Successfully imported ${batchItemsPreview.length} item(s)!`);
+      setBatchItemsPreview(null);
+      setShowBatchImport(false);
+    } catch (error) {
+      console.error('Error importing items:', error);
+      alert('Error importing items. Please try again.');
     }
   };
 
@@ -2189,7 +2335,7 @@ const SportsEditorialCalendar = () => {
         </div>
       )}
 
-      {/* CSV Import Modal */}
+      {/* CSV Import Modal (Campaigns) */}
       {showCsvImport && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-zinc-700">
@@ -2279,6 +2425,129 @@ Adidas Fall Campaign,Adidas,Brand Partnership,reel,5`}
                   </button>
                   <button
                     onClick={() => setCsvPreview(null)}
+                    className="px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-lg transition-colors"
+                    style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                  >
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Batch Item Import Modal */}
+      {showBatchImport && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-zinc-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>BATCH ADD CALENDAR ITEMS</h3>
+              <button
+                onClick={() => {
+                  setShowBatchImport(false);
+                  setBatchItemsPreview(null);
+                }}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {!batchItemsPreview ? (
+              <div className="space-y-4">
+                <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
+                  <h4 className="font-bold text-purple-400 mb-2">CSV Format:</h4>
+                  <pre className="text-xs text-zinc-300 bg-zinc-900 p-3 rounded overflow-x-auto">
+{`Start Date,Type,Title,Assignees,Status,Notes,Links,Themes,Campaign ID,End Date,Frequency
+2026-04-01,CONTENT,Beach Photoshoot,Angel;Maria,planned,Morning shoot,https://...,birthday;holiday,,
+2026-04-05,PROMO,Weekly Workout,Angel,in_progress,Gym session,,cityconnect,,2026-04-30,weekly
+2026-05-01,SPONSORED,Nike Summer Campaign,Angel,planned,Reel + Story,https://...,holiday,campaign_id_123,,`}
+                  </pre>
+                  <div className="text-sm text-zinc-400 mt-3 space-y-1">
+                    <p className="font-bold">Required columns:</p>
+                    <p>• <span className="text-purple-300">Start Date</span> (YYYY-MM-DD)</p>
+                    <p>• <span className="text-purple-300">Type</span> (CONTENT, PROMO, SPONSORED, etc.)</p>
+                    <p>• <span className="text-purple-300">Title</span></p>
+
+                    <p className="font-bold mt-3">Optional columns:</p>
+                    <p>• <span className="text-purple-300">Assignees</span> (semicolon-separated: Angel;Maria)</p>
+                    <p>• <span className="text-purple-300">Status</span> (planned, in_progress, completed)</p>
+                    <p>• <span className="text-purple-300">Notes, Links, Themes</span> (themes semicolon-separated)</p>
+                    <p>• <span className="text-purple-300">Campaign ID</span> (for sponsored items)</p>
+
+                    <p className="font-bold mt-3 text-purple-400">Time Period Support:</p>
+                    <p>• <span className="text-purple-300">End Date</span> + <span className="text-purple-300">Frequency</span> creates recurring items</p>
+                    <p>• <span className="text-purple-300">Frequency</span>: daily, weekly, biweekly, monthly</p>
+                    <p>• Example: Start 2026-04-01, End 2026-04-30, Frequency "weekly" → Creates 5 items</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    UPLOAD CSV FILE
+                  </label>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleBatchItemsCsvUpload}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-green-900/20 border border-green-600/30 rounded-lg p-4">
+                  <p className="text-green-400 font-semibold">
+                    ✓ Found {batchItemsPreview.length} item(s) in CSV file
+                  </p>
+                </div>
+
+                <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                  {batchItemsPreview.map((item, idx) => (
+                    <div key={idx} className="bg-zinc-800 rounded-lg p-3 border border-zinc-700">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-purple-400">
+                              {new Date(item.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                            <span className="text-xs bg-zinc-700 px-2 py-0.5 rounded">{item.type}</span>
+                            {item.status && (
+                              <span className="text-xs bg-zinc-700 px-2 py-0.5 rounded">{item.status}</span>
+                            )}
+                          </div>
+                          <h4 className="font-semibold text-white text-sm">{item.title}</h4>
+                          {item.assignees.length > 0 && (
+                            <p className="text-xs text-zinc-400 mt-1">
+                              👤 {item.assignees.join(', ')}
+                            </p>
+                          )}
+                          {item.themes.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {item.themes.map((theme, i) => (
+                                <span key={i} className="text-xs bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded">
+                                  {theme}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={handleImportBatchItems}
+                    className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors"
+                    style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                  >
+                    IMPORT {batchItemsPreview.length} ITEM(S)
+                  </button>
+                  <button
+                    onClick={() => setBatchItemsPreview(null)}
                     className="px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-lg transition-colors"
                     style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
                   >
@@ -2487,6 +2756,19 @@ Adidas Fall Campaign,Adidas,Brand Partnership,reel,5`}
               <Plus size={18} />
               <span className="hidden sm:inline">ADD ITEM</span>
               <span className="sm:hidden">ADD</span>
+            </button>
+            <button
+              onClick={() => setShowBatchImport(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700
+                hover:from-purple-500 hover:to-purple-600 text-white font-bold rounded-lg transition-all
+                shadow-lg hover:shadow-purple-500/25"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.05em' }}
+              title="Import multiple items at once"
+            >
+              <Plus size={18} />
+              <Plus size={18} className="-ml-4" />
+              <span className="hidden sm:inline">BATCH ADD</span>
+              <span className="sm:hidden">BATCH</span>
             </button>
           </div>
         </div>

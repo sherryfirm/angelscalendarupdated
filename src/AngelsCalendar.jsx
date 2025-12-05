@@ -1508,34 +1508,42 @@ const SportsEditorialCalendar = () => {
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl sm:text-2xl font-bold flex items-center gap-2" style={{ fontFamily: "'Oswald', sans-serif" }}>
                 <DollarSign size={28} className="text-cyan-400" />
-                SPONSORED POSTS
+                SPONSORED CAMPAIGNS
               </h3>
-              <button
-                onClick={() => setShowSponsoredView(false)}
-                className="text-zinc-400 hover:text-white transition-colors"
-              >
-                <X size={24} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowCampaignManager(true)}
+                  className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                >
+                  + NEW
+                </button>
+                <button
+                  onClick={() => setShowSponsoredView(false)}
+                  className="text-zinc-400 hover:text-white transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
             </div>
 
-            {/* Sponsored Items List */}
-            {getSponsoredItems().length === 0 ? (
+            {/* Campaigns List */}
+            {getSponsoredCampaignsWithItems().length === 0 ? (
               <div className="text-center py-12 text-zinc-400">
                 <DollarSign size={48} className="mx-auto mb-4 opacity-50" />
-                <p className="text-lg mb-2">No sponsored posts yet</p>
-                <p className="text-sm">Mark calendar items as sponsored to track obligations and completed posts</p>
+                <p className="text-lg mb-2">No sponsored campaigns yet</p>
+                <p className="text-sm">Create campaigns to track sponsored content obligations</p>
+                <button
+                  onClick={() => setShowCampaignManager(true)}
+                  className="mt-4 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold transition-colors"
+                >
+                  CREATE FIRST CAMPAIGN
+                </button>
               </div>
             ) : (
               <div className="space-y-4">
-                {getSponsoredItems().map(item => {
-                  const dateObj = new Date(item.date + 'T12:00:00');
-                  const formattedDate = dateObj.toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  });
-                  const isExpanded = editingSponsoredItem === item.id;
-                  const obligations = item.obligations || {};
+                {getSponsoredCampaignsWithItems().map(campaign => {
+                  const isExpanded = editingSponsoredItem === campaign.id;
+                  const obligations = campaign.obligations || {};
                   const obligationTypes = Object.keys(obligations);
                   const totalRequired = obligationTypes.reduce((sum, type) => sum + (obligations[type]?.required || 0), 0);
                   const totalCompleted = obligationTypes.reduce((sum, type) => sum + (obligations[type]?.posts?.length || 0), 0);
@@ -1543,44 +1551,38 @@ const SportsEditorialCalendar = () => {
 
                   return (
                     <div
-                      key={item.id}
+                      key={campaign.id}
                       className="bg-zinc-800 rounded-lg border-2 border-cyan-600/30 hover:border-cyan-600/50 transition-all"
                     >
-                      {/* Card Header */}
+                      {/* Campaign Header */}
                       <div className="p-4">
                         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <DollarSign size={20} className="text-cyan-400" />
                               <h4 className="text-lg font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
-                                {item.title || 'Untitled'}
+                                {campaign.name}
                               </h4>
                             </div>
                             <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-                              <span className="flex items-center gap-1">
-                                <Calendar size={14} />
-                                {formattedDate}
+                              <span className="bg-cyan-900/30 text-cyan-300 px-2 py-0.5 rounded">
+                                {campaign.sponsorName}
                               </span>
-                              {item.sponsorName && (
-                                <span className="bg-cyan-900/30 text-cyan-300 px-2 py-0.5 rounded">
-                                  {item.sponsorName}
-                                </span>
-                              )}
-                              {item.sponsorType && (
+                              {campaign.sponsorType && (
                                 <span className="bg-zinc-700 text-zinc-300 px-2 py-0.5 rounded text-xs">
-                                  {item.sponsorType}
+                                  {campaign.sponsorType}
                                 </span>
                               )}
+                              <span className="text-xs">
+                                {campaign.items.length} linked item{campaign.items.length !== 1 ? 's' : ''}
+                              </span>
                             </div>
                           </div>
                           <button
-                            onClick={() => {
-                              setShowSponsoredView(false);
-                              handleEdit(item);
-                            }}
-                            className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm font-semibold transition-colors"
+                            onClick={() => handleDeleteCampaign(campaign.id)}
+                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold transition-colors"
                           >
-                            EDIT
+                            DELETE
                           </button>
                         </div>
 
@@ -1602,7 +1604,7 @@ const SportsEditorialCalendar = () => {
 
                         {/* Expand/Collapse Button */}
                         <button
-                          onClick={() => setEditingSponsoredItem(isExpanded ? null : item.id)}
+                          onClick={() => setEditingSponsoredItem(isExpanded ? null : campaign.id)}
                           className="w-full mt-2 py-2 bg-zinc-700/50 hover:bg-zinc-700 rounded-lg text-sm font-semibold transition-colors"
                           style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
                         >
@@ -1613,6 +1615,37 @@ const SportsEditorialCalendar = () => {
                       {/* Expanded Details */}
                       {isExpanded && (
                         <div className="border-t border-zinc-700 p-4 space-y-4">
+                          {/* Linked Items */}
+                          {campaign.items.length > 0 && (
+                            <div>
+                              <h5 className="text-sm font-bold text-zinc-300 uppercase mb-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                                Linked Calendar Items ({campaign.items.length})
+                              </h5>
+                              <div className="space-y-2">
+                                {campaign.items.map(item => (
+                                  <div key={item.id} className="bg-zinc-900 rounded p-2 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar size={14} className="text-cyan-400" />
+                                      <span className="text-sm">{item.title}</span>
+                                      <span className="text-xs text-zinc-500">
+                                        {new Date(item.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                      </span>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        setShowSponsoredView(false);
+                                        handleEdit(item);
+                                      }}
+                                      className="text-xs text-cyan-400 hover:text-cyan-300"
+                                    >
+                                      EDIT
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Existing Obligations */}
                           {obligationTypes.length > 0 && (
                             <div className="space-y-3">
@@ -1631,7 +1664,7 @@ const SportsEditorialCalendar = () => {
                                         </span>
                                       </div>
                                       <button
-                                        onClick={() => handleDeleteObligation(item.id, type)}
+                                        onClick={() => handleDeleteObligation(campaign.id, type)}
                                         className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors"
                                         title="Delete obligation"
                                       >
@@ -1668,7 +1701,7 @@ const SportsEditorialCalendar = () => {
                                               {new Date(post.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                                             </span>
                                             <button
-                                              onClick={() => handleDeletePostLink(item.id, type, idx)}
+                                              onClick={() => handleDeletePostLink(campaign.id, type, idx)}
                                               className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors flex-shrink-0"
                                               title="Delete link"
                                             >
@@ -1688,7 +1721,7 @@ const SportsEditorialCalendar = () => {
                                           className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                           onKeyPress={(e) => {
                                             if (e.key === 'Enter' && e.target.value.trim()) {
-                                              handleAddPostLink(item.id, type, e.target.value);
+                                              handleAddPostLink(campaign.id, type, e.target.value);
                                               e.target.value = '';
                                             }
                                           }}
@@ -1697,7 +1730,7 @@ const SportsEditorialCalendar = () => {
                                           onClick={(e) => {
                                             const input = e.target.previousSibling;
                                             if (input.value.trim()) {
-                                              handleAddPostLink(item.id, type, input.value);
+                                              handleAddPostLink(campaign.id, type, input.value);
                                               input.value = '';
                                             }
                                           }}
@@ -1737,7 +1770,7 @@ const SportsEditorialCalendar = () => {
                               <button
                                 onClick={() => {
                                   if (newObligationType.trim()) {
-                                    handleAddObligation(item.id, newObligationType.trim(), newObligationCount);
+                                    handleAddObligation(campaign.id, newObligationType.trim(), newObligationCount);
                                     setNewObligationType('reel');
                                     setNewObligationCount(1);
                                   }
@@ -1755,6 +1788,84 @@ const SportsEditorialCalendar = () => {
                 })}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Campaign Manager Modal */}
+      {showCampaignManager && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-lg border border-zinc-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>CREATE CAMPAIGN</h3>
+              <button
+                onClick={() => setShowCampaignManager(false)}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  CAMPAIGN NAME *
+                </label>
+                <input
+                  type="text"
+                  value={newCampaign.name}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, name: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g., Nike Summer 2026"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  SPONSOR NAME *
+                </label>
+                <input
+                  type="text"
+                  value={newCampaign.sponsorName}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, sponsorName: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g., Nike, Coca-Cola"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  SPONSOR TYPE
+                </label>
+                <input
+                  type="text"
+                  value={newCampaign.sponsorType}
+                  onChange={(e) => setNewCampaign({ ...newCampaign, sponsorType: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g., Brand Partnership, Product Placement"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    handleCreateCampaign();
+                    setShowCampaignManager(false);
+                  }}
+                  className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-colors"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  CREATE CAMPAIGN
+                </button>
+                <button
+                  onClick={() => setShowCampaignManager(false)}
+                  className="px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-lg transition-colors"
+                  style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                >
+                  CANCEL
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2228,49 +2339,44 @@ const SportsEditorialCalendar = () => {
                   </div>
                 </div>
 
-                {/* Sponsored Post Section */}
+                {/* Sponsored Campaign Section */}
                 <div className="border-t border-zinc-700 pt-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <input
-                      type="checkbox"
-                      id="isSponsored"
-                      checked={newItem.isSponsored || false}
-                      onChange={(e) => setNewItem({ ...newItem, isSponsored: e.target.checked })}
-                      className="w-5 h-5 bg-zinc-800 border-2 border-zinc-600 rounded focus:ring-2 focus:ring-cyan-500"
-                    />
-                    <label htmlFor="isSponsored" className="text-sm font-semibold text-zinc-300 flex items-center gap-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-                      <DollarSign size={16} className="text-cyan-400" />
-                      MARK AS SPONSORED POST
-                    </label>
-                  </div>
-
-                  {newItem.isSponsored && (
-                    <div className="space-y-3 bg-zinc-800 rounded-lg p-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>SPONSOR NAME</label>
-                        <input
-                          type="text"
-                          value={newItem.sponsorName || ''}
-                          onChange={(e) => setNewItem({ ...newItem, sponsorName: e.target.value })}
-                          className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                          placeholder="e.g., Nike, Coca-Cola..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-zinc-400 mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>SPONSOR TYPE</label>
-                        <input
-                          type="text"
-                          value={newItem.sponsorType || ''}
-                          onChange={(e) => setNewItem({ ...newItem, sponsorType: e.target.value })}
-                          className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                          placeholder="e.g., Brand Partnership, Product Placement..."
-                        />
-                      </div>
-                      <p className="text-xs text-cyan-400 flex items-center gap-1">
-                        <DollarSign size={12} />
-                        Add obligations and track posts in the Sponsored view
-                      </p>
-                    </div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    <DollarSign size={16} className="inline text-cyan-400 mr-1" />
+                    SPONSORED CAMPAIGN
+                  </label>
+                  <select
+                    value={newItem.sponsorCampaignId || ''}
+                    onChange={(e) => setNewItem({ ...newItem, sponsorCampaignId: e.target.value || null })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="">None (not sponsored)</option>
+                    {sponsoredCampaigns.map(campaign => (
+                      <option key={campaign.id} value={campaign.id}>
+                        {campaign.name} - {campaign.sponsorName}
+                      </option>
+                    ))}
+                  </select>
+                  {sponsoredCampaigns.length === 0 && (
+                    <p className="text-xs text-zinc-500 mt-1">
+                      No campaigns yet.{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowImportModal(false);
+                          setShowCampaignManager(true);
+                        }}
+                        className="text-cyan-400 hover:text-cyan-300 underline"
+                      >
+                        Create one
+                      </button>
+                    </p>
+                  )}
+                  {newItem.sponsorCampaignId && (
+                    <p className="text-xs text-cyan-400 mt-2 flex items-center gap-1">
+                      <DollarSign size={12} />
+                      This item will be linked to the campaign. Track obligations in Sponsored view.
+                    </p>
                   )}
                 </div>
 

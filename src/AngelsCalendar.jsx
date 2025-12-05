@@ -51,6 +51,13 @@ const SportsEditorialCalendar = () => {
   const [showCampaignManager, setShowCampaignManager] = useState(false);
   const [newCampaign, setNewCampaign] = useState({ name: '', sponsorName: '', sponsorType: '' });
 
+  // State for multi-platform post grouping
+  const [addingUrlToPost, setAddingUrlToPost] = useState(null); // { campaignId, obligationType, postIndex }
+
+  // State for CSV import
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [csvPreview, setCsvPreview] = useState(null);
+
   // Default themes (always available)
   const defaultThemes = [
     { value: 'birthday', label: 'Birthday', emoji: '🎂', isDefault: true },
@@ -168,6 +175,20 @@ const SportsEditorialCalendar = () => {
   // ========================================
   // All filtering happens on local state (0 additional Firebase reads!)
 
+  // Utility function to detect platform from URL
+  const detectPlatform = (url) => {
+    const urlLower = url.toLowerCase();
+    if (urlLower.includes('instagram.com')) return 'Instagram';
+    if (urlLower.includes('tiktok.com')) return 'TikTok';
+    if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) return 'YouTube';
+    if (urlLower.includes('facebook.com') || urlLower.includes('fb.com')) return 'Facebook';
+    if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) return 'Twitter/X';
+    if (urlLower.includes('linkedin.com')) return 'LinkedIn';
+    if (urlLower.includes('pinterest.com')) return 'Pinterest';
+    if (urlLower.includes('snapchat.com')) return 'Snapchat';
+    return 'Other';
+  };
+
   // Get all sponsored campaigns with their linked items
   const getSponsoredCampaignsWithItems = () => {
     return sponsoredCampaigns.map(campaign => ({
@@ -222,9 +243,17 @@ const SportsEditorialCalendar = () => {
       const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
       if (!campaign || !campaign.obligations?.[obligationType]) return;
 
+      const platform = detectPlatform(postUrl.trim());
       const newPost = {
-        url: postUrl.trim(),
-        dateAdded: new Date().toISOString()
+        id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        urls: [
+          {
+            platform: platform,
+            url: postUrl.trim(),
+            dateAdded: new Date().toISOString()
+          }
+        ],
+        dateCompleted: new Date().toISOString()
       };
 
       const updatedPosts = [...(campaign.obligations[obligationType].posts || []), newPost];
@@ -272,6 +301,107 @@ const SportsEditorialCalendar = () => {
     } catch (error) {
       console.error('Error deleting post link:', error);
       alert('Error deleting post link. Please try again.');
+    }
+  };
+
+  // Add a URL to an existing post group (multi-platform support)
+  const handleAddUrlToPost = async (campaignId, obligationType, postIndex, postUrl) => {
+    if (!postUrl || !postUrl.trim()) {
+      alert('Please enter a valid URL');
+      return;
+    }
+
+    try {
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign || !campaign.obligations?.[obligationType]) return;
+
+      const posts = campaign.obligations[obligationType].posts;
+      if (!posts[postIndex]) return;
+
+      const platform = detectPlatform(postUrl.trim());
+      const newUrl = {
+        platform: platform,
+        url: postUrl.trim(),
+        dateAdded: new Date().toISOString()
+      };
+
+      // Update the post with the new URL
+      const updatedPost = {
+        ...posts[postIndex],
+        urls: [...(posts[postIndex].urls || []), newUrl]
+      };
+
+      const updatedPosts = posts.map((post, idx) =>
+        idx === postIndex ? updatedPost : post
+      );
+
+      const updatedObligations = {
+        ...campaign.obligations,
+        [obligationType]: {
+          ...campaign.obligations[obligationType],
+          posts: updatedPosts
+        }
+      };
+
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
+      ));
+
+      // Clear the adding state
+      setAddingUrlToPost(null);
+    } catch (error) {
+      console.error('Error adding URL to post:', error);
+      alert('Error adding URL to post. Please try again.');
+    }
+  };
+
+  // Delete a single URL from a post group
+  const handleDeleteUrl = async (campaignId, obligationType, postIndex, urlIndex) => {
+    try {
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign || !campaign.obligations?.[obligationType]) return;
+
+      const posts = campaign.obligations[obligationType].posts;
+      if (!posts[postIndex]) return;
+
+      const updatedUrls = posts[postIndex].urls.filter((_, idx) => idx !== urlIndex);
+
+      // If this was the last URL, delete the entire post
+      if (updatedUrls.length === 0) {
+        await handleDeletePostLink(campaignId, obligationType, postIndex);
+        return;
+      }
+
+      // Otherwise, update the post with remaining URLs
+      const updatedPost = {
+        ...posts[postIndex],
+        urls: updatedUrls
+      };
+
+      const updatedPosts = posts.map((post, idx) =>
+        idx === postIndex ? updatedPost : post
+      );
+
+      const updatedObligations = {
+        ...campaign.obligations,
+        [obligationType]: {
+          ...campaign.obligations[obligationType],
+          posts: updatedPosts
+        }
+      };
+
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
+      ));
+    } catch (error) {
+      console.error('Error deleting URL:', error);
+      alert('Error deleting URL. Please try again.');
     }
   };
 
@@ -363,6 +493,96 @@ const SportsEditorialCalendar = () => {
     } catch (error) {
       console.error('Error deleting campaign:', error);
       alert('Error deleting campaign. Please try again.');
+    }
+  };
+
+  // Parse CSV file for batch campaign import
+  const handleCsvFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target.result;
+        const lines = text.split('\n').filter(line => line.trim());
+
+        // Parse CSV (simple parsing - assumes comma-separated)
+        const campaigns = [];
+        for (let i = 1; i < lines.length; i++) { // Skip header row
+          const parts = lines[i].split(',').map(p => p.trim().replace(/^["']|["']$/g, '')); // Remove quotes
+
+          if (parts.length >= 2 && parts[0] && parts[1]) {
+            const campaign = {
+              name: parts[0],
+              sponsorName: parts[1],
+              sponsorType: parts[2] || 'Brand Partnership',
+              obligations: {}
+            };
+
+            // Parse obligations (pairs of type and count)
+            for (let j = 3; j < parts.length; j += 2) {
+              if (parts[j] && parts[j + 1]) {
+                const obligationType = parts[j].toLowerCase().trim();
+                const count = parseInt(parts[j + 1]);
+                if (!isNaN(count) && count > 0) {
+                  campaign.obligations[obligationType] = {
+                    required: count,
+                    posts: []
+                  };
+                }
+              }
+            }
+
+            campaigns.push(campaign);
+          }
+        }
+
+        if (campaigns.length === 0) {
+          alert('No valid campaigns found in CSV. Please check the format.');
+          return;
+        }
+
+        setCsvPreview(campaigns);
+      } catch (error) {
+        console.error('Error parsing CSV:', error);
+        alert('Error parsing CSV file. Please check the format.');
+      }
+    };
+
+    reader.readAsText(file);
+    event.target.value = ''; // Reset file input
+  };
+
+  // Import campaigns from CSV preview
+  const handleImportCampaigns = async () => {
+    if (!csvPreview || csvPreview.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      const newCampaigns = [];
+
+      csvPreview.forEach(campaignData => {
+        const docRef = doc(collection(db, 'sponsoredCampaigns'));
+        const fullCampaign = {
+          ...campaignData,
+          createdAt: new Date().toISOString()
+        };
+        batch.set(docRef, fullCampaign);
+        newCampaigns.push({ ...fullCampaign, id: docRef.id });
+      });
+
+      await batch.commit();
+
+      // Update local state
+      setSponsoredCampaigns(prev => [...prev, ...newCampaigns]);
+
+      alert(`Successfully imported ${csvPreview.length} campaign(s)!`);
+      setCsvPreview(null);
+      setShowCsvImport(false);
+    } catch (error) {
+      console.error('Error importing campaigns:', error);
+      alert('Error importing campaigns. Please try again.');
     }
   };
 
@@ -1512,6 +1732,13 @@ const SportsEditorialCalendar = () => {
               </h3>
               <div className="flex items-center gap-2">
                 <button
+                  onClick={() => setShowCsvImport(true)}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                  title="Import campaigns from CSV"
+                >
+                  IMPORT CSV
+                </button>
+                <button
                   onClick={() => setShowCampaignManager(true)}
                   className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors"
                 >
@@ -1685,59 +1912,151 @@ const SportsEditorialCalendar = () => {
 
                                     {/* Post Links */}
                                     {obligations[type].posts && obligations[type].posts.length > 0 && (
-                                      <div className="space-y-2 mb-3">
-                                        {obligations[type].posts.map((post, idx) => (
-                                          <div key={idx} className="flex items-center gap-2 bg-zinc-800 p-2 rounded">
-                                            <LinkIcon size={14} className="text-cyan-400 flex-shrink-0" />
-                                            <a
-                                              href={post.url}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-sm text-cyan-400 hover:text-cyan-300 truncate flex-1"
-                                            >
-                                              {post.url}
-                                            </a>
-                                            <span className="text-xs text-zinc-500 flex-shrink-0">
-                                              {new Date(post.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                            </span>
-                                            <button
-                                              onClick={() => handleDeletePostLink(campaign.id, type, idx)}
-                                              className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors flex-shrink-0"
-                                              title="Delete link"
-                                            >
-                                              <Trash2 size={12} />
-                                            </button>
-                                          </div>
-                                        ))}
+                                      <div className="space-y-3 mb-3">
+                                        {obligations[type].posts.map((post, idx) => {
+                                          const urls = post.urls || [{ platform: 'Other', url: post.url, dateAdded: post.dateAdded }];
+                                          const isAddingUrl = addingUrlToPost?.campaignId === campaign.id &&
+                                                              addingUrlToPost?.obligationType === type &&
+                                                              addingUrlToPost?.postIndex === idx;
+
+                                          return (
+                                            <div key={post.id || idx} className="bg-zinc-800 rounded-lg p-3 space-y-2">
+                                              {/* Post header with platform count */}
+                                              <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                  <LinkIcon size={14} className="text-cyan-400" />
+                                                  <span className="text-sm font-semibold text-zinc-300">
+                                                    Post #{idx + 1}
+                                                  </span>
+                                                  {urls.length > 1 && (
+                                                    <span className="text-xs bg-cyan-600/30 text-cyan-300 px-2 py-0.5 rounded">
+                                                      {urls.length} platforms
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                  <button
+                                                    onClick={() => setAddingUrlToPost({ campaignId: campaign.id, obligationType: type, postIndex: idx })}
+                                                    className="p-1 bg-cyan-600/50 hover:bg-cyan-600 rounded text-white transition-colors text-xs px-2"
+                                                    title="Add platform URL to this post"
+                                                  >
+                                                    + Platform
+                                                  </button>
+                                                  <button
+                                                    onClick={() => handleDeletePostLink(campaign.id, type, idx)}
+                                                    className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors"
+                                                    title="Delete entire post"
+                                                  >
+                                                    <Trash2 size={12} />
+                                                  </button>
+                                                </div>
+                                              </div>
+
+                                              {/* URLs list */}
+                                              <div className="space-y-1.5 pl-5">
+                                                {urls.map((urlObj, urlIdx) => (
+                                                  <div key={urlIdx} className="flex items-center gap-2 bg-zinc-900 p-2 rounded">
+                                                    <span className="text-xs font-semibold text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded flex-shrink-0 min-w-[70px] text-center">
+                                                      {urlObj.platform}
+                                                    </span>
+                                                    <a
+                                                      href={urlObj.url}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="text-sm text-cyan-400 hover:text-cyan-300 truncate flex-1"
+                                                    >
+                                                      {urlObj.url}
+                                                    </a>
+                                                    <span className="text-xs text-zinc-500 flex-shrink-0">
+                                                      {new Date(urlObj.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                    </span>
+                                                    {urls.length > 1 && (
+                                                      <button
+                                                        onClick={() => handleDeleteUrl(campaign.id, type, idx, urlIdx)}
+                                                        className="p-1 bg-red-600/70 hover:bg-red-600 rounded text-white transition-colors flex-shrink-0"
+                                                        title="Delete this URL"
+                                                      >
+                                                        <X size={10} />
+                                                      </button>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+
+                                              {/* Add URL to this post form */}
+                                              {isAddingUrl && (
+                                                <div className="pl-5 pt-1">
+                                                  <div className="flex gap-2">
+                                                    <input
+                                                      type="url"
+                                                      placeholder="Paste additional platform URL..."
+                                                      className="flex-1 bg-zinc-900 border border-cyan-600/50 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                      onKeyPress={(e) => {
+                                                        if (e.key === 'Enter' && e.target.value.trim()) {
+                                                          handleAddUrlToPost(campaign.id, type, idx, e.target.value);
+                                                          e.target.value = '';
+                                                        }
+                                                      }}
+                                                      autoFocus
+                                                    />
+                                                    <button
+                                                      onClick={(e) => {
+                                                        const input = e.target.previousSibling;
+                                                        if (input.value.trim()) {
+                                                          handleAddUrlToPost(campaign.id, type, idx, input.value);
+                                                          input.value = '';
+                                                        }
+                                                      }}
+                                                      className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm font-semibold transition-colors"
+                                                    >
+                                                      ADD
+                                                    </button>
+                                                    <button
+                                                      onClick={() => setAddingUrlToPost(null)}
+                                                      className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm transition-colors"
+                                                    >
+                                                      Cancel
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     )}
 
                                     {/* Add Post Link Form */}
                                     {progress.completed < progress.required && (
-                                      <div className="flex gap-2">
-                                        <input
-                                          type="url"
-                                          placeholder="Paste post URL..."
-                                          className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                          onKeyPress={(e) => {
-                                            if (e.key === 'Enter' && e.target.value.trim()) {
-                                              handleAddPostLink(campaign.id, type, e.target.value);
-                                              e.target.value = '';
-                                            }
-                                          }}
-                                        />
-                                        <button
-                                          onClick={(e) => {
-                                            const input = e.target.previousSibling;
-                                            if (input.value.trim()) {
-                                              handleAddPostLink(campaign.id, type, input.value);
-                                              input.value = '';
-                                            }
-                                          }}
-                                          className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded font-semibold text-sm transition-colors"
-                                        >
-                                          ADD
-                                        </button>
+                                      <div className="space-y-2">
+                                        <p className="text-xs text-zinc-400">
+                                          Add a new post (you can add more platform URLs to it later):
+                                        </p>
+                                        <div className="flex gap-2">
+                                          <input
+                                            type="url"
+                                            placeholder="Paste post URL..."
+                                            className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                            onKeyPress={(e) => {
+                                              if (e.key === 'Enter' && e.target.value.trim()) {
+                                                handleAddPostLink(campaign.id, type, e.target.value);
+                                                e.target.value = '';
+                                              }
+                                            }}
+                                          />
+                                          <button
+                                            onClick={(e) => {
+                                              const input = e.target.previousSibling;
+                                              if (input.value.trim()) {
+                                                handleAddPostLink(campaign.id, type, input.value);
+                                                input.value = '';
+                                              }
+                                            }}
+                                            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded font-semibold text-sm transition-colors"
+                                          >
+                                            ADD POST
+                                          </button>
+                                        </div>
                                       </div>
                                     )}
                                   </div>
@@ -1866,6 +2185,108 @@ const SportsEditorialCalendar = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showCsvImport && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-zinc-700">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold" style={{ fontFamily: "'Oswald', sans-serif" }}>IMPORT CAMPAIGNS FROM CSV</h3>
+              <button
+                onClick={() => {
+                  setShowCsvImport(false);
+                  setCsvPreview(null);
+                }}
+                className="text-zinc-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {!csvPreview ? (
+              <div className="space-y-4">
+                <div className="bg-zinc-800 border border-zinc-700 rounded-lg p-4">
+                  <h4 className="font-bold text-cyan-400 mb-2">CSV Format:</h4>
+                  <pre className="text-xs text-zinc-300 bg-zinc-900 p-3 rounded overflow-x-auto">
+{`Campaign Name,Sponsor Name,Sponsor Type,Obligation Type 1,Count 1,Obligation Type 2,Count 2,...
+Nike Summer 2026,Nike,Brand Partnership,reel,4,story,6
+Coca-Cola Promo,Coca-Cola,Product Placement,post,10,carousel,3
+Adidas Fall Campaign,Adidas,Brand Partnership,reel,5`}
+                  </pre>
+                  <p className="text-sm text-zinc-400 mt-2">
+                    • First 3 columns are required: Campaign Name, Sponsor Name, Sponsor Type
+                    <br />
+                    • Obligation types and counts are optional, in pairs
+                    <br />
+                    • First row (header) will be skipped
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-zinc-400 mb-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                    UPLOAD CSV FILE
+                  </label>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleCsvFileUpload}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-cyan-600 file:text-white hover:file:bg-cyan-700"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-green-900/20 border border-green-600/30 rounded-lg p-4">
+                  <p className="text-green-400 font-semibold">
+                    ✓ Found {csvPreview.length} campaign(s) in CSV file
+                  </p>
+                </div>
+
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                  {csvPreview.map((campaign, idx) => (
+                    <div key={idx} className="bg-zinc-800 rounded-lg p-4 border border-zinc-700">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h4 className="font-bold text-white">{campaign.name}</h4>
+                          <p className="text-sm text-zinc-400">
+                            {campaign.sponsorName} • {campaign.sponsorType}
+                          </p>
+                        </div>
+                      </div>
+                      {Object.keys(campaign.obligations).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {Object.entries(campaign.obligations).map(([type, data]) => (
+                            <span key={type} className="text-xs bg-cyan-900/30 text-cyan-300 px-2 py-1 rounded">
+                              {data.required} {type}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={handleImportCampaigns}
+                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors"
+                    style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                  >
+                    IMPORT {csvPreview.length} CAMPAIGN(S)
+                  </button>
+                  <button
+                    onClick={() => setCsvPreview(null)}
+                    className="px-6 py-3 bg-zinc-700 hover:bg-zinc-600 text-white font-bold rounded-lg transition-colors"
+                    style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+                  >
+                    CANCEL
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

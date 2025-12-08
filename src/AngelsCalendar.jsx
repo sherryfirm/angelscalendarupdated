@@ -189,12 +189,9 @@ const SportsEditorialCalendar = () => {
     const urlLower = url.toLowerCase();
     if (urlLower.includes('instagram.com')) return 'Instagram';
     if (urlLower.includes('tiktok.com')) return 'TikTok';
-    if (urlLower.includes('youtube.com') || urlLower.includes('youtu.be')) return 'YouTube';
     if (urlLower.includes('facebook.com') || urlLower.includes('fb.com')) return 'Facebook';
     if (urlLower.includes('twitter.com') || urlLower.includes('x.com')) return 'Twitter/X';
     if (urlLower.includes('linkedin.com')) return 'LinkedIn';
-    if (urlLower.includes('pinterest.com')) return 'Pinterest';
-    if (urlLower.includes('snapchat.com')) return 'Snapchat';
     return 'Other';
   };
 
@@ -211,42 +208,30 @@ const SportsEditorialCalendar = () => {
         return <Facebook {...iconProps} />;
       case 'Twitter/X':
         return <Twitter {...iconProps} />;
-      case 'YouTube':
-        return <Youtube {...iconProps} />;
       case 'LinkedIn':
         return <Linkedin {...iconProps} />;
       case 'TikTok':
-        return <MessageCircle {...iconProps} />; // TikTok-like icon
-      case 'Snapchat':
-        return <Camera {...iconProps} />;
-      case 'Pinterest':
-        return <LinkIcon {...iconProps} />;
+        return <MessageCircle {...iconProps} />;
       default:
         return <LinkIcon {...iconProps} />;
     }
   };
 
-  // Get platform color for visual distinction
+  // Get platform color for visual distinction - highly distinct colors
   const getPlatformColor = (platform) => {
     switch (platform) {
       case 'Instagram':
-        return 'text-pink-400 bg-pink-900/30 border-pink-600/30';
+        return 'text-pink-500 bg-gradient-to-br from-pink-900/40 to-rose-900/40 border-pink-500/50';
       case 'Instagram Stories':
-        return 'text-purple-400 bg-purple-900/30 border-purple-600/30';
+        return 'text-purple-400 bg-gradient-to-br from-purple-900/40 to-violet-900/40 border-purple-500/50';
       case 'Facebook':
-        return 'text-blue-400 bg-blue-900/30 border-blue-600/30';
+        return 'text-blue-600 bg-gradient-to-br from-blue-900/40 to-blue-800/40 border-blue-600/50';
       case 'Twitter/X':
-        return 'text-sky-400 bg-sky-900/30 border-sky-600/30';
-      case 'YouTube':
-        return 'text-red-400 bg-red-900/30 border-red-600/30';
+        return 'text-sky-300 bg-gradient-to-br from-sky-900/40 to-cyan-900/40 border-sky-400/50';
       case 'LinkedIn':
-        return 'text-blue-500 bg-blue-900/30 border-blue-600/30';
+        return 'text-indigo-400 bg-gradient-to-br from-indigo-900/40 to-blue-900/40 border-indigo-500/50';
       case 'TikTok':
-        return 'text-cyan-400 bg-cyan-900/30 border-cyan-600/30';
-      case 'Snapchat':
-        return 'text-yellow-400 bg-yellow-900/30 border-yellow-600/30';
-      case 'Pinterest':
-        return 'text-red-400 bg-red-900/30 border-red-600/30';
+        return 'text-cyan-400 bg-gradient-to-br from-cyan-900/40 to-teal-900/40 border-cyan-500/50';
       default:
         return 'text-zinc-400 bg-zinc-800/30 border-zinc-600/30';
     }
@@ -2320,7 +2305,7 @@ const SportsEditorialCalendar = () => {
 
                                             {/* Platform checkboxes */}
                                             <div className="grid grid-cols-2 gap-2 mb-4">
-                                              {['Instagram', 'Instagram Stories', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'LinkedIn', 'Snapchat'].map(platform => (
+                                              {['Instagram', 'Instagram Stories', 'TikTok', 'Facebook', 'Twitter/X', 'LinkedIn'].map(platform => (
                                                 <label
                                                   key={platform}
                                                   className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all border ${

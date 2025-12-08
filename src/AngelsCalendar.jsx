@@ -58,6 +58,8 @@ const SportsEditorialCalendar = () => {
   const [creatingPost, setCreatingPost] = useState(null); // { campaignId, obligationType }
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
   const [platformUrls, setPlatformUrls] = useState({});
+  const [postDate, setPostDate] = useState('');
+  const [postTitle, setPostTitle] = useState('');
 
   // State for CSV import (campaigns)
   const [showCsvImport, setShowCsvImport] = useState(false);
@@ -325,12 +327,20 @@ const SportsEditorialCalendar = () => {
     }
   };
 
-  // Add a multi-platform post with URLs for selected platforms
+  // Add a multi-platform post with URLs for selected platforms - creates calendar item
   const handleCreateMultiPlatformPost = async (campaignId, obligationType) => {
-    // Validate at least one URL is provided
+    // Validate required fields
     const hasUrls = selectedPlatforms.some(platform => platformUrls[platform]?.trim());
     if (!hasUrls) {
       alert('Please enter at least one platform URL');
+      return;
+    }
+    if (!postDate) {
+      alert('Please select a date for this post');
+      return;
+    }
+    if (!postTitle.trim()) {
+      alert('Please enter a title for this post');
       return;
     }
 
@@ -347,13 +357,31 @@ const SportsEditorialCalendar = () => {
           dateAdded: new Date().toISOString()
         }));
 
-      const newPost = {
-        id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        urls: urls,
-        dateCompleted: new Date().toISOString()
+      // Create calendar item for this post
+      const calendarItemData = {
+        date: postDate,
+        type: 'sponsored',
+        title: postTitle,
+        assignees: [],
+        status: 'completed', // Mark as completed since URLs are provided
+        notes: `${campaign.sponsorName} - ${obligationType}`,
+        links: urls.map(u => u.url).join('\n'),
+        themes: [],
+        order: Date.now(),
+        sponsorCampaignId: campaignId,
+        obligationType: obligationType,
+        platformUrls: urls
       };
 
-      const updatedPosts = [...(campaign.obligations[obligationType].posts || []), newPost];
+      // Add calendar item to Firebase
+      const docRef = await addDoc(collection(db, 'calendarItems'), calendarItemData);
+      const newCalendarItem = { ...calendarItemData, id: docRef.id };
+
+      // Add to local calendar items state
+      setCalendarItems(items => [...items, newCalendarItem]);
+
+      // Update campaign obligations to reference this calendar item
+      const updatedPosts = [...(campaign.obligations[obligationType].posts || []), docRef.id];
       const updatedObligations = {
         ...campaign.obligations,
         [obligationType]: {
@@ -373,18 +401,30 @@ const SportsEditorialCalendar = () => {
       setCreatingPost(null);
       setSelectedPlatforms([]);
       setPlatformUrls({});
+      setPostDate('');
+      setPostTitle('');
     } catch (error) {
       console.error('Error creating multi-platform post:', error);
       alert('Error creating post. Please try again.');
     }
   };
 
-  // Delete a post link from a campaign obligation
+  // Delete a post link from a campaign obligation - also deletes the calendar item
   const handleDeletePostLink = async (campaignId, obligationType, postIndex) => {
     try {
       const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
       if (!campaign || !campaign.obligations?.[obligationType]) return;
 
+      // Get the calendar item ID to delete
+      const calendarItemId = campaign.obligations[obligationType].posts[postIndex];
+
+      // Delete the calendar item from Firebase
+      await deleteDoc(doc(db, 'calendarItems', calendarItemId));
+
+      // Remove from local calendar items state
+      setCalendarItems(items => items.filter(item => item.id !== calendarItemId));
+
+      // Remove from campaign obligations
       const updatedPosts = campaign.obligations[obligationType].posts.filter((_, idx) => idx !== postIndex);
       const updatedObligations = {
         ...campaign.obligations,
@@ -901,7 +941,9 @@ const SportsEditorialCalendar = () => {
     links: '',
     themes: [],
     order: Date.now(),
-    sponsorCampaignId: null // Links to campaign in sponsoredCampaigns collection
+    sponsorCampaignId: null, // Links to campaign in sponsoredCampaigns collection
+    obligationType: null, // Type of obligation this fulfills (reel, story, post, etc.)
+    platformUrls: [] // Array of { platform, url, dateAdded } for multi-platform posts
   });
 
   const months = [
@@ -951,7 +993,7 @@ const SportsEditorialCalendar = () => {
           // Optimistically add to local state (0 additional reads)
           setCalendarItems(items => [...items, { ...newItem, id: docRef.id }]);
         }
-        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), sponsorCampaignId: null });
+        setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), sponsorCampaignId: null, obligationType: null, platformUrls: [] });
         setShowImportModal(false);
       } catch (error) {
         console.error('Error saving item:', error);
@@ -2023,10 +2065,12 @@ const SportsEditorialCalendar = () => {
                   // Get all unique platforms used in this campaign
                   const campaignPlatforms = new Set();
                   obligationTypes.forEach(type => {
-                    const posts = obligations[type]?.posts || [];
-                    posts.forEach(post => {
-                      const urls = post.urls || [{ platform: 'Other' }];
-                      urls.forEach(u => campaignPlatforms.add(u.platform));
+                    const postIds = obligations[type]?.posts || [];
+                    postIds.forEach(calendarItemId => {
+                      const calendarItem = calendarItems.find(item => item.id === calendarItemId);
+                      if (calendarItem && calendarItem.platformUrls) {
+                        calendarItem.platformUrls.forEach(urlObj => campaignPlatforms.add(urlObj.platform));
+                      }
                     });
                   });
 
@@ -2274,129 +2318,96 @@ const SportsEditorialCalendar = () => {
                                       ></div>
                                     </div>
 
-                                    {/* Post Links */}
+                                    {/* Post Links - Now showing calendar items */}
                                     {obligations[type].posts && obligations[type].posts.length > 0 && (
                                       <div className="space-y-3 mb-3">
-                                        {obligations[type].posts.map((post, idx) => {
-                                          const urls = post.urls || [{ platform: 'Other', url: post.url, dateAdded: post.dateAdded }];
-                                          const isAddingUrl = addingUrlToPost?.campaignId === campaign.id &&
-                                                              addingUrlToPost?.obligationType === type &&
-                                                              addingUrlToPost?.postIndex === idx;
+                                        {obligations[type].posts.map((calendarItemId, idx) => {
+                                          // Find the calendar item
+                                          const calendarItem = calendarItems.find(item => item.id === calendarItemId);
+
+                                          // Handle case where calendar item might not be loaded yet or was deleted
+                                          if (!calendarItem) {
+                                            return (
+                                              <div key={calendarItemId} className="bg-zinc-800 rounded-lg p-3">
+                                                <span className="text-xs text-zinc-500">Loading post #{idx + 1}...</span>
+                                              </div>
+                                            );
+                                          }
+
+                                          const urls = calendarItem.platformUrls || [];
+                                          const formattedDate = new Date(calendarItem.date + 'T12:00:00').toLocaleDateString('en-US', {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric'
+                                          });
 
                                           return (
-                                            <div key={post.id || idx} className="bg-zinc-800 rounded-lg p-3 space-y-2">
-                                              {/* Post header with platform icons */}
+                                            <div key={calendarItemId} className="bg-zinc-800 rounded-lg p-3 space-y-2">
+                                              {/* Post header with calendar info */}
                                               <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                  <span className="text-sm font-semibold text-zinc-300">
-                                                    Post #{idx + 1}
+                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                  <Calendar size={14} className="text-cyan-400 flex-shrink-0" />
+                                                  <span className="text-sm font-semibold text-zinc-300 truncate">
+                                                    {calendarItem.title}
                                                   </span>
-                                                  <div className="flex items-center gap-1">
-                                                    {urls.map((urlObj, i) => (
-                                                      <div
-                                                        key={i}
-                                                        className={`p-1 rounded border ${getPlatformColor(urlObj.platform)}`}
-                                                        title={urlObj.platform}
-                                                      >
-                                                        {getPlatformIcon(urlObj.platform, 14)}
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                  {urls.length > 1 && (
-                                                    <span className="text-xs text-zinc-500">
-                                                      ({urls.length})
-                                                    </span>
-                                                  )}
+                                                  <span className="text-xs text-zinc-500 flex-shrink-0">
+                                                    {formattedDate}
+                                                  </span>
                                                 </div>
-                                                <div className="flex items-center gap-1">
-                                                  <button
-                                                    onClick={() => setAddingUrlToPost({ campaignId: campaign.id, obligationType: type, postIndex: idx })}
-                                                    className="p-1 bg-cyan-600/50 hover:bg-cyan-600 rounded text-white transition-colors text-xs px-2"
-                                                    title="Add platform URL to this post"
-                                                  >
-                                                    + Platform
-                                                  </button>
-                                                  <button
-                                                    onClick={() => handleDeletePostLink(campaign.id, type, idx)}
-                                                    className="p-1 bg-red-600 hover:bg-red-700 rounded text-white transition-colors"
-                                                    title="Delete entire post"
-                                                  >
-                                                    <Trash2 size={12} />
-                                                  </button>
-                                                </div>
+                                                <button
+                                                  onClick={() => handleDeletePostLink(campaign.id, type, idx)}
+                                                  className="p-1 bg-red-600/70 hover:bg-red-600 rounded text-white transition-colors flex-shrink-0 ml-2"
+                                                  title="Delete post and calendar item"
+                                                >
+                                                  <Trash2 size={12} />
+                                                </button>
                                               </div>
 
-                                              {/* URLs list */}
-                                              <div className="space-y-1.5 pl-5">
-                                                {urls.map((urlObj, urlIdx) => (
-                                                  <div key={urlIdx} className="flex items-center gap-2 bg-zinc-900 p-2 rounded border border-zinc-800">
-                                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded border ${getPlatformColor(urlObj.platform)} flex-shrink-0`}>
-                                                      {getPlatformIcon(urlObj.platform, 14)}
-                                                      <span className="text-xs font-semibold">
-                                                        {urlObj.platform}
-                                                      </span>
-                                                    </div>
-                                                    <a
-                                                      href={urlObj.url}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="text-sm text-cyan-400 hover:text-cyan-300 truncate flex-1"
-                                                    >
-                                                      {urlObj.url}
-                                                    </a>
-                                                    <span className="text-xs text-zinc-500 flex-shrink-0">
-                                                      {new Date(urlObj.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                                                    </span>
-                                                    {urls.length > 1 && (
-                                                      <button
-                                                        onClick={() => handleDeleteUrl(campaign.id, type, idx, urlIdx)}
-                                                        className="p-1 bg-red-600/70 hover:bg-red-600 rounded text-white transition-colors flex-shrink-0"
-                                                        title="Delete this URL"
-                                                      >
-                                                        <X size={10} />
-                                                      </button>
-                                                    )}
+                                              {/* Platform icons */}
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                {urls.map((urlObj, i) => (
+                                                  <div
+                                                    key={i}
+                                                    className={`flex items-center gap-1.5 px-2 py-1 rounded border ${getPlatformColor(urlObj.platform)}`}
+                                                    title={urlObj.platform}
+                                                  >
+                                                    {getPlatformIcon(urlObj.platform, 12)}
+                                                    <span className="text-xs font-semibold">{urlObj.platform}</span>
                                                   </div>
                                                 ))}
                                               </div>
 
-                                              {/* Add URL to this post form */}
-                                              {isAddingUrl && (
-                                                <div className="pl-5 pt-1">
-                                                  <div className="flex gap-2">
-                                                    <input
-                                                      type="url"
-                                                      placeholder="Paste additional platform URL..."
-                                                      className="flex-1 bg-zinc-900 border border-cyan-600/50 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                                      onKeyPress={(e) => {
-                                                        if (e.key === 'Enter' && e.target.value.trim()) {
-                                                          handleAddUrlToPost(campaign.id, type, idx, e.target.value);
-                                                          e.target.value = '';
-                                                        }
-                                                      }}
-                                                      autoFocus
-                                                    />
-                                                    <button
-                                                      onClick={(e) => {
-                                                        const input = e.target.previousSibling;
-                                                        if (input.value.trim()) {
-                                                          handleAddUrlToPost(campaign.id, type, idx, input.value);
-                                                          input.value = '';
-                                                        }
-                                                      }}
-                                                      className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm font-semibold transition-colors"
-                                                    >
-                                                      ADD
-                                                    </button>
-                                                    <button
-                                                      onClick={() => setAddingUrlToPost(null)}
-                                                      className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-white rounded text-sm transition-colors"
-                                                    >
-                                                      Cancel
-                                                    </button>
-                                                  </div>
-                                                </div>
-                                              )}
+                                              {/* URLs list with clickable links */}
+                                              <div className="space-y-1.5 pl-5">
+                                                {urls.map((urlObj, urlIdx) => (
+                                                  <a
+                                                    key={urlIdx}
+                                                    href={urlObj.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-2 bg-zinc-900 p-2 rounded border border-zinc-800 hover:border-cyan-600/50 transition-colors"
+                                                  >
+                                                    <span className="text-sm text-cyan-400 hover:text-cyan-300 truncate flex-1">
+                                                      {urlObj.url}
+                                                    </span>
+                                                    <span className="text-xs text-zinc-500 flex-shrink-0">
+                                                      {new Date(urlObj.dateAdded).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                                    </span>
+                                                  </a>
+                                                ))}
+                                              </div>
+
+                                              {/* Edit button to modify calendar item */}
+                                              <button
+                                                onClick={() => {
+                                                  setShowSponsoredView(false);
+                                                  handleEdit(calendarItem);
+                                                }}
+                                                className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 ml-5 mt-1"
+                                              >
+                                                <Edit2 size={12} />
+                                                Edit Post Details
+                                              </button>
                                             </div>
                                           );
                                         })}
@@ -2407,15 +2418,17 @@ const SportsEditorialCalendar = () => {
                                     {progress.completed < progress.required && (
                                       <div className="space-y-3">
                                         {creatingPost?.campaignId === campaign.id && creatingPost?.obligationType === type ? (
-                                          // Platform selection interface
+                                          // Platform selection interface with calendar item creation
                                           <div className="bg-zinc-800/50 rounded-lg p-4 border border-cyan-600/30">
                                             <div className="flex items-center justify-between mb-3">
-                                              <h6 className="text-sm font-bold text-cyan-400">SELECT PLATFORMS</h6>
+                                              <h6 className="text-sm font-bold text-cyan-400">CREATE POST</h6>
                                               <button
                                                 onClick={() => {
                                                   setCreatingPost(null);
                                                   setSelectedPlatforms([]);
                                                   setPlatformUrls({});
+                                                  setPostDate('');
+                                                  setPostTitle('');
                                                 }}
                                                 className="text-xs text-zinc-400 hover:text-white"
                                               >
@@ -2423,7 +2436,35 @@ const SportsEditorialCalendar = () => {
                                               </button>
                                             </div>
 
+                                            {/* Date and Title inputs */}
+                                            <div className="space-y-3 mb-4">
+                                              <div>
+                                                <label className="block text-xs text-zinc-400 mb-1">Post Date*</label>
+                                                <input
+                                                  type="date"
+                                                  value={postDate}
+                                                  onChange={(e) => setPostDate(e.target.value)}
+                                                  className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                  required
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-xs text-zinc-400 mb-1">Post Title*</label>
+                                                <input
+                                                  type="text"
+                                                  value={postTitle}
+                                                  onChange={(e) => setPostTitle(e.target.value)}
+                                                  placeholder={`e.g., ${campaign.sponsorName} ${type}`}
+                                                  className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                  required
+                                                />
+                                              </div>
+                                            </div>
+
                                             {/* Platform checkboxes */}
+                                            <div className="mb-2">
+                                              <label className="block text-xs text-zinc-400 mb-2">Select Platforms*</label>
+                                            </div>
                                             <div className="grid grid-cols-2 gap-2 mb-4">
                                               {['Instagram', 'Instagram Stories', 'TikTok', 'Facebook', 'Twitter/X', 'LinkedIn'].map(platform => (
                                                 <label
@@ -2495,6 +2536,8 @@ const SportsEditorialCalendar = () => {
                                               setCreatingPost({ campaignId: campaign.id, obligationType: type });
                                               setSelectedPlatforms([]);
                                               setPlatformUrls({});
+                                              setPostDate('');
+                                              setPostTitle('');
                                             }}
                                             className="w-full py-3 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-500 hover:to-cyan-600 text-white rounded-lg font-semibold text-sm transition-all shadow-lg hover:shadow-cyan-500/25 flex items-center justify-center gap-2"
                                           >
@@ -3044,7 +3087,7 @@ Adidas Fall Campaign,Adidas,Brand Partnership,reel,5`}
             <button
               onClick={() => {
                 setEditingItem(null);
-                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), sponsorCampaignId: null });
+                setNewItem({ date: '', type: null, title: '', assignees: [], status: 'planned', notes: '', links: '', themes: [], order: Date.now(), sponsorCampaignId: null, obligationType: null, platformUrls: [] });
                 setShowImportModal(true);
               }}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-600 to-red-700

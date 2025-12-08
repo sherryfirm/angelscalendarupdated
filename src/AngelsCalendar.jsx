@@ -54,6 +54,11 @@ const SportsEditorialCalendar = () => {
   // State for multi-platform post grouping
   const [addingUrlToPost, setAddingUrlToPost] = useState(null); // { campaignId, obligationType, postIndex }
 
+  // State for new post creation with platforms
+  const [creatingPost, setCreatingPost] = useState(null); // { campaignId, obligationType }
+  const [selectedPlatforms, setSelectedPlatforms] = useState([]);
+  const [platformUrls, setPlatformUrls] = useState({});
+
   // State for CSV import (campaigns)
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvPreview, setCsvPreview] = useState(null);
@@ -278,6 +283,60 @@ const SportsEditorialCalendar = () => {
     } catch (error) {
       console.error('Error adding post link:', error);
       alert('Error adding post link. Please try again.');
+    }
+  };
+
+  // Add a multi-platform post with URLs for selected platforms
+  const handleCreateMultiPlatformPost = async (campaignId, obligationType) => {
+    // Validate at least one URL is provided
+    const hasUrls = selectedPlatforms.some(platform => platformUrls[platform]?.trim());
+    if (!hasUrls) {
+      alert('Please enter at least one platform URL');
+      return;
+    }
+
+    try {
+      const campaign = sponsoredCampaigns.find(c => c.id === campaignId);
+      if (!campaign || !campaign.obligations?.[obligationType]) return;
+
+      // Create URLs array from selected platforms
+      const urls = selectedPlatforms
+        .filter(platform => platformUrls[platform]?.trim())
+        .map(platform => ({
+          platform: platform,
+          url: platformUrls[platform].trim(),
+          dateAdded: new Date().toISOString()
+        }));
+
+      const newPost = {
+        id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        urls: urls,
+        dateCompleted: new Date().toISOString()
+      };
+
+      const updatedPosts = [...(campaign.obligations[obligationType].posts || []), newPost];
+      const updatedObligations = {
+        ...campaign.obligations,
+        [obligationType]: {
+          ...campaign.obligations[obligationType],
+          posts: updatedPosts
+        }
+      };
+
+      await updateDoc(doc(db, 'sponsoredCampaigns', campaignId), { obligations: updatedObligations });
+
+      // Optimistically update local state
+      setSponsoredCampaigns(campaigns => campaigns.map(c =>
+        c.id === campaignId ? { ...c, obligations: updatedObligations } : c
+      ));
+
+      // Reset state
+      setCreatingPost(null);
+      setSelectedPlatforms([]);
+      setPlatformUrls({});
+    } catch (error) {
+      console.error('Error creating multi-platform post:', error);
+      alert('Error creating post. Please try again.');
     }
   };
 
@@ -2174,35 +2233,97 @@ const SportsEditorialCalendar = () => {
 
                                     {/* Add Post Link Form */}
                                     {progress.completed < progress.required && (
-                                      <div className="space-y-2">
-                                        <p className="text-xs text-zinc-400">
-                                          Add a new post (you can add more platform URLs to it later):
-                                        </p>
-                                        <div className="flex gap-2">
-                                          <input
-                                            type="url"
-                                            placeholder="Paste post URL..."
-                                            className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                                            onKeyPress={(e) => {
-                                              if (e.key === 'Enter' && e.target.value.trim()) {
-                                                handleAddPostLink(campaign.id, type, e.target.value);
-                                                e.target.value = '';
-                                              }
-                                            }}
-                                          />
+                                      <div className="space-y-3">
+                                        {creatingPost?.campaignId === campaign.id && creatingPost?.obligationType === type ? (
+                                          // Platform selection interface
+                                          <div className="bg-zinc-800/50 rounded-lg p-4 border border-cyan-600/30">
+                                            <div className="flex items-center justify-between mb-3">
+                                              <h6 className="text-sm font-bold text-cyan-400">SELECT PLATFORMS</h6>
+                                              <button
+                                                onClick={() => {
+                                                  setCreatingPost(null);
+                                                  setSelectedPlatforms([]);
+                                                  setPlatformUrls({});
+                                                }}
+                                                className="text-xs text-zinc-400 hover:text-white"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+
+                                            {/* Platform checkboxes */}
+                                            <div className="grid grid-cols-2 gap-2 mb-4">
+                                              {['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'LinkedIn', 'Pinterest', 'Snapchat'].map(platform => (
+                                                <label
+                                                  key={platform}
+                                                  className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all ${
+                                                    selectedPlatforms.includes(platform)
+                                                      ? 'bg-cyan-600/20 border border-cyan-600/50'
+                                                      : 'bg-zinc-700/30 border border-zinc-700 hover:border-zinc-600'
+                                                  }`}
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedPlatforms.includes(platform)}
+                                                    onChange={(e) => {
+                                                      if (e.target.checked) {
+                                                        setSelectedPlatforms([...selectedPlatforms, platform]);
+                                                      } else {
+                                                        setSelectedPlatforms(selectedPlatforms.filter(p => p !== platform));
+                                                        setPlatformUrls({ ...platformUrls, [platform]: '' });
+                                                      }
+                                                    }}
+                                                    className="w-4 h-4 rounded border-zinc-600 text-cyan-600 focus:ring-cyan-500 focus:ring-offset-zinc-900"
+                                                  />
+                                                  <span className="text-sm">{platform}</span>
+                                                </label>
+                                              ))}
+                                            </div>
+
+                                            {/* URL inputs for selected platforms */}
+                                            {selectedPlatforms.length > 0 && (
+                                              <div className="space-y-2 mb-3">
+                                                <p className="text-xs text-zinc-400 mb-2">Enter URLs for selected platforms:</p>
+                                                {selectedPlatforms.map(platform => (
+                                                  <div key={platform} className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded min-w-[90px] text-center">
+                                                      {platform}
+                                                    </span>
+                                                    <input
+                                                      type="url"
+                                                      value={platformUrls[platform] || ''}
+                                                      onChange={(e) => setPlatformUrls({ ...platformUrls, [platform]: e.target.value })}
+                                                      placeholder={`${platform} URL...`}
+                                                      className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                                    />
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+
+                                            {/* Submit button */}
+                                            <button
+                                              onClick={() => handleCreateMultiPlatformPost(campaign.id, type)}
+                                              disabled={selectedPlatforms.length === 0}
+                                              className="w-full py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded font-semibold text-sm transition-colors"
+                                            >
+                                              {selectedPlatforms.length === 0 ? 'SELECT PLATFORMS ABOVE' : `ADD POST (${selectedPlatforms.length} ${selectedPlatforms.length === 1 ? 'PLATFORM' : 'PLATFORMS'})`}
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          // Button to start creating post
                                           <button
-                                            onClick={(e) => {
-                                              const input = e.target.previousSibling;
-                                              if (input.value.trim()) {
-                                                handleAddPostLink(campaign.id, type, input.value);
-                                                input.value = '';
-                                              }
+                                            onClick={() => {
+                                              setCreatingPost({ campaignId: campaign.id, obligationType: type });
+                                              setSelectedPlatforms([]);
+                                              setPlatformUrls({});
                                             }}
-                                            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded font-semibold text-sm transition-colors"
+                                            className="w-full py-3 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-500 hover:to-cyan-600 text-white rounded-lg font-semibold text-sm transition-all shadow-lg hover:shadow-cyan-500/25 flex items-center justify-center gap-2"
                                           >
-                                            ADD POST
+                                            <Plus size={18} />
+                                            ADD NEW POST
                                           </button>
-                                        </div>
+                                        )}
                                       </div>
                                     )}
                                   </div>

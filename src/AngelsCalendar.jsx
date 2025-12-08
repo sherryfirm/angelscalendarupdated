@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, RefreshCw, DollarSign, Link as LinkIcon } from 'lucide-react';
+import { Calendar, Plus, User, Edit2, Trash2, X, ChevronLeft, ChevronRight, Zap, RefreshCw, DollarSign, Link as LinkIcon, Instagram, Facebook, Twitter, Youtube, Linkedin, Camera, MessageCircle } from 'lucide-react';
 import { db } from './firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, writeBatch } from 'firebase/firestore';
 import { initialCalendarItems } from './initialData';
@@ -196,6 +196,60 @@ const SportsEditorialCalendar = () => {
     if (urlLower.includes('pinterest.com')) return 'Pinterest';
     if (urlLower.includes('snapchat.com')) return 'Snapchat';
     return 'Other';
+  };
+
+  // Get icon component for platform
+  const getPlatformIcon = (platform, size = 16) => {
+    const iconProps = { size, className: "flex-shrink-0" };
+
+    switch (platform) {
+      case 'Instagram':
+        return <Instagram {...iconProps} />;
+      case 'Instagram Stories':
+        return <Camera {...iconProps} />;
+      case 'Facebook':
+        return <Facebook {...iconProps} />;
+      case 'Twitter/X':
+        return <Twitter {...iconProps} />;
+      case 'YouTube':
+        return <Youtube {...iconProps} />;
+      case 'LinkedIn':
+        return <Linkedin {...iconProps} />;
+      case 'TikTok':
+        return <MessageCircle {...iconProps} />; // TikTok-like icon
+      case 'Snapchat':
+        return <Camera {...iconProps} />;
+      case 'Pinterest':
+        return <LinkIcon {...iconProps} />;
+      default:
+        return <LinkIcon {...iconProps} />;
+    }
+  };
+
+  // Get platform color for visual distinction
+  const getPlatformColor = (platform) => {
+    switch (platform) {
+      case 'Instagram':
+        return 'text-pink-400 bg-pink-900/30 border-pink-600/30';
+      case 'Instagram Stories':
+        return 'text-purple-400 bg-purple-900/30 border-purple-600/30';
+      case 'Facebook':
+        return 'text-blue-400 bg-blue-900/30 border-blue-600/30';
+      case 'Twitter/X':
+        return 'text-sky-400 bg-sky-900/30 border-sky-600/30';
+      case 'YouTube':
+        return 'text-red-400 bg-red-900/30 border-red-600/30';
+      case 'LinkedIn':
+        return 'text-blue-500 bg-blue-900/30 border-blue-600/30';
+      case 'TikTok':
+        return 'text-cyan-400 bg-cyan-900/30 border-cyan-600/30';
+      case 'Snapchat':
+        return 'text-yellow-400 bg-yellow-900/30 border-yellow-600/30';
+      case 'Pinterest':
+        return 'text-red-400 bg-red-900/30 border-red-600/30';
+      default:
+        return 'text-zinc-400 bg-zinc-800/30 border-zinc-600/30';
+    }
   };
 
   // Get all sponsored campaigns with their linked items
@@ -2126,16 +2180,26 @@ const SportsEditorialCalendar = () => {
 
                                           return (
                                             <div key={post.id || idx} className="bg-zinc-800 rounded-lg p-3 space-y-2">
-                                              {/* Post header with platform count */}
+                                              {/* Post header with platform icons */}
                                               <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                  <LinkIcon size={14} className="text-cyan-400" />
                                                   <span className="text-sm font-semibold text-zinc-300">
                                                     Post #{idx + 1}
                                                   </span>
+                                                  <div className="flex items-center gap-1">
+                                                    {urls.map((urlObj, i) => (
+                                                      <div
+                                                        key={i}
+                                                        className={`p-1 rounded border ${getPlatformColor(urlObj.platform)}`}
+                                                        title={urlObj.platform}
+                                                      >
+                                                        {getPlatformIcon(urlObj.platform, 14)}
+                                                      </div>
+                                                    ))}
+                                                  </div>
                                                   {urls.length > 1 && (
-                                                    <span className="text-xs bg-cyan-600/30 text-cyan-300 px-2 py-0.5 rounded">
-                                                      {urls.length} platforms
+                                                    <span className="text-xs text-zinc-500">
+                                                      ({urls.length})
                                                     </span>
                                                   )}
                                                 </div>
@@ -2160,10 +2224,13 @@ const SportsEditorialCalendar = () => {
                                               {/* URLs list */}
                                               <div className="space-y-1.5 pl-5">
                                                 {urls.map((urlObj, urlIdx) => (
-                                                  <div key={urlIdx} className="flex items-center gap-2 bg-zinc-900 p-2 rounded">
-                                                    <span className="text-xs font-semibold text-cyan-400 bg-cyan-900/30 px-2 py-0.5 rounded flex-shrink-0 min-w-[70px] text-center">
-                                                      {urlObj.platform}
-                                                    </span>
+                                                  <div key={urlIdx} className="flex items-center gap-2 bg-zinc-900 p-2 rounded border border-zinc-800">
+                                                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded border ${getPlatformColor(urlObj.platform)} flex-shrink-0`}>
+                                                      {getPlatformIcon(urlObj.platform, 14)}
+                                                      <span className="text-xs font-semibold">
+                                                        {urlObj.platform}
+                                                      </span>
+                                                    </div>
                                                     <a
                                                       href={urlObj.url}
                                                       target="_blank"
@@ -2253,13 +2320,13 @@ const SportsEditorialCalendar = () => {
 
                                             {/* Platform checkboxes */}
                                             <div className="grid grid-cols-2 gap-2 mb-4">
-                                              {['Instagram', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'LinkedIn', 'Pinterest', 'Snapchat'].map(platform => (
+                                              {['Instagram', 'Instagram Stories', 'TikTok', 'YouTube', 'Facebook', 'Twitter/X', 'LinkedIn', 'Snapchat'].map(platform => (
                                                 <label
                                                   key={platform}
-                                                  className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all ${
+                                                  className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all border ${
                                                     selectedPlatforms.includes(platform)
-                                                      ? 'bg-cyan-600/20 border border-cyan-600/50'
-                                                      : 'bg-zinc-700/30 border border-zinc-700 hover:border-zinc-600'
+                                                      ? getPlatformColor(platform)
+                                                      : 'bg-zinc-700/30 border-zinc-700 hover:border-zinc-600'
                                                   }`}
                                                 >
                                                   <input
@@ -2275,7 +2342,10 @@ const SportsEditorialCalendar = () => {
                                                     }}
                                                     className="w-4 h-4 rounded border-zinc-600 text-cyan-600 focus:ring-cyan-500 focus:ring-offset-zinc-900"
                                                   />
-                                                  <span className="text-sm">{platform}</span>
+                                                  <div className="flex items-center gap-1.5">
+                                                    {getPlatformIcon(platform, 16)}
+                                                    <span className="text-sm">{platform}</span>
+                                                  </div>
                                                 </label>
                                               ))}
                                             </div>
@@ -2286,14 +2356,17 @@ const SportsEditorialCalendar = () => {
                                                 <p className="text-xs text-zinc-400 mb-2">Enter URLs for selected platforms:</p>
                                                 {selectedPlatforms.map(platform => (
                                                   <div key={platform} className="flex items-center gap-2">
-                                                    <span className="text-xs font-semibold text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded min-w-[90px] text-center">
-                                                      {platform}
-                                                    </span>
+                                                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded border ${getPlatformColor(platform)} min-w-[120px]`}>
+                                                      {getPlatformIcon(platform, 14)}
+                                                      <span className="text-xs font-semibold">
+                                                        {platform}
+                                                      </span>
+                                                    </div>
                                                     <input
                                                       type="url"
                                                       value={platformUrls[platform] || ''}
                                                       onChange={(e) => setPlatformUrls({ ...platformUrls, [platform]: e.target.value })}
-                                                      placeholder={`${platform} URL...`}
+                                                      placeholder={`Paste ${platform} URL...`}
                                                       className="flex-1 bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
                                                     />
                                                   </div>

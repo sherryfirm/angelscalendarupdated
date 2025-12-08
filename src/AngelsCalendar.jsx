@@ -2020,66 +2020,186 @@ const SportsEditorialCalendar = () => {
                   const totalCompleted = obligationTypes.reduce((sum, type) => sum + (obligations[type]?.posts?.length || 0), 0);
                   const overallProgress = totalRequired > 0 ? Math.round((totalCompleted / totalRequired) * 100) : 0;
 
+                  // Get all unique platforms used in this campaign
+                  const campaignPlatforms = new Set();
+                  obligationTypes.forEach(type => {
+                    const posts = obligations[type]?.posts || [];
+                    posts.forEach(post => {
+                      const urls = post.urls || [{ platform: 'Other' }];
+                      urls.forEach(u => campaignPlatforms.add(u.platform));
+                    });
+                  });
+
+                  // Determine campaign health status
+                  const getHealthStatus = () => {
+                    if (totalRequired === 0) return 'none';
+                    if (overallProgress === 100) return 'complete';
+                    if (overallProgress >= 50) return 'good';
+                    if (overallProgress > 0) return 'warning';
+                    return 'danger';
+                  };
+                  const healthStatus = getHealthStatus();
+
+                  // Health status colors
+                  const healthColors = {
+                    complete: 'border-green-500/50 bg-gradient-to-br from-green-900/20 to-zinc-800',
+                    good: 'border-cyan-500/50 bg-gradient-to-br from-cyan-900/20 to-zinc-800',
+                    warning: 'border-yellow-500/50 bg-gradient-to-br from-yellow-900/20 to-zinc-800',
+                    danger: 'border-red-500/50 bg-gradient-to-br from-red-900/20 to-zinc-800',
+                    none: 'border-zinc-600/30 bg-zinc-800'
+                  };
+
                   return (
                     <div
                       key={campaign.id}
-                      className="bg-zinc-800 rounded-lg border-2 border-cyan-600/30 hover:border-cyan-600/50 transition-all"
+                      className={`rounded-lg border-2 transition-all ${healthColors[healthStatus]} hover:shadow-lg`}
                     >
                       {/* Campaign Header */}
                       <div className="p-4">
-                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <DollarSign size={20} className="text-cyan-400" />
-                              <h4 className="text-lg font-bold text-white" style={{ fontFamily: "'Oswald', sans-serif" }}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="flex-1 min-w-0">
+                            {/* Title Row with Status Indicator */}
+                            <div className="flex items-center gap-3 mb-2">
+                              {/* Status Dot */}
+                              <div className="flex-shrink-0">
+                                {healthStatus === 'complete' && <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/50" title="Complete" />}
+                                {healthStatus === 'good' && <div className="w-3 h-3 rounded-full bg-cyan-500 shadow-lg shadow-cyan-500/50" title="In Progress - Good" />}
+                                {healthStatus === 'warning' && <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/50" title="In Progress - Low" />}
+                                {healthStatus === 'danger' && <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/50" title="Not Started" />}
+                                {healthStatus === 'none' && <div className="w-3 h-3 rounded-full bg-zinc-600" title="No Obligations" />}
+                              </div>
+
+                              {/* Campaign Name */}
+                              <h4 className="text-lg font-bold text-white truncate" style={{ fontFamily: "'Oswald', sans-serif" }}>
                                 {campaign.name}
                               </h4>
+
+                              {/* Circular Progress Ring */}
+                              {totalRequired > 0 && (
+                                <div className="flex-shrink-0 relative w-12 h-12">
+                                  <svg className="w-12 h-12 transform -rotate-90" viewBox="0 0 36 36">
+                                    <circle
+                                      cx="18"
+                                      cy="18"
+                                      r="16"
+                                      fill="none"
+                                      className="stroke-zinc-700"
+                                      strokeWidth="3"
+                                    />
+                                    <circle
+                                      cx="18"
+                                      cy="18"
+                                      r="16"
+                                      fill="none"
+                                      className={
+                                        healthStatus === 'complete' ? 'stroke-green-500' :
+                                        healthStatus === 'good' ? 'stroke-cyan-500' :
+                                        healthStatus === 'warning' ? 'stroke-yellow-500' :
+                                        'stroke-red-500'
+                                      }
+                                      strokeWidth="3"
+                                      strokeDasharray={`${overallProgress}, 100`}
+                                      strokeLinecap="round"
+                                    />
+                                  </svg>
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <span className={`text-xs font-bold ${
+                                      healthStatus === 'complete' ? 'text-green-400' :
+                                      healthStatus === 'good' ? 'text-cyan-400' :
+                                      healthStatus === 'warning' ? 'text-yellow-400' :
+                                      'text-red-400'
+                                    }`}>
+                                      {overallProgress}%
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
-                              <span className="bg-cyan-900/30 text-cyan-300 px-2 py-0.5 rounded">
+
+                            {/* Sponsor Info & Metrics Row */}
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <span className="bg-cyan-900/40 text-cyan-300 px-2.5 py-1 rounded-md font-semibold text-sm border border-cyan-700/50">
                                 {campaign.sponsorName}
                               </span>
                               {campaign.sponsorType && (
-                                <span className="bg-zinc-700 text-zinc-300 px-2 py-0.5 rounded text-xs">
+                                <span className="bg-zinc-700/50 text-zinc-300 px-2 py-1 rounded text-xs border border-zinc-600">
                                   {campaign.sponsorType}
                                 </span>
                               )}
-                              <span className="text-xs">
-                                {campaign.items.length} linked item{campaign.items.length !== 1 ? 's' : ''}
-                              </span>
+                              {totalRequired > 0 && (
+                                <span className={`px-2.5 py-1 rounded-md font-bold text-xs border ${
+                                  healthStatus === 'complete' ? 'bg-green-900/30 text-green-400 border-green-700/50' :
+                                  healthStatus === 'good' ? 'bg-cyan-900/30 text-cyan-400 border-cyan-700/50' :
+                                  healthStatus === 'warning' ? 'bg-yellow-900/30 text-yellow-400 border-yellow-700/50' :
+                                  'bg-red-900/30 text-red-400 border-red-700/50'
+                                }`}>
+                                  {totalCompleted}/{totalRequired} posts
+                                </span>
+                              )}
                             </div>
+
+                            {/* Obligation Type Chips - Visual Summary */}
+                            {obligationTypes.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {obligationTypes.map(type => {
+                                  const progress = calculateProgress(obligations, type);
+                                  const typeHealth = progress.percentage === 100 ? 'complete' : progress.percentage >= 50 ? 'good' : progress.percentage > 0 ? 'warning' : 'danger';
+                                  return (
+                                    <div
+                                      key={type}
+                                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs font-bold uppercase ${
+                                        typeHealth === 'complete' ? 'bg-green-900/40 text-green-300 border-green-600/60' :
+                                        typeHealth === 'good' ? 'bg-cyan-900/40 text-cyan-300 border-cyan-600/60' :
+                                        typeHealth === 'warning' ? 'bg-yellow-900/40 text-yellow-300 border-yellow-600/60' :
+                                        'bg-red-900/40 text-red-300 border-red-600/60'
+                                      }`}
+                                    >
+                                      <span>{type}</span>
+                                      <span className="opacity-75">{progress.completed}/{progress.required}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Platform Icons Row */}
+                            {campaignPlatforms.size > 0 && (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-zinc-500 uppercase font-semibold">Platforms:</span>
+                                <div className="flex items-center gap-1.5">
+                                  {Array.from(campaignPlatforms).map(platform => (
+                                    <div
+                                      key={platform}
+                                      className={`p-1.5 rounded-md border ${getPlatformColor(platform)}`}
+                                      title={platform}
+                                    >
+                                      {getPlatformIcon(platform, 16)}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          <button
-                            onClick={() => handleDeleteCampaign(campaign.id)}
-                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold transition-colors"
-                          >
-                            DELETE
-                          </button>
+
+                          {/* Action Buttons */}
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={() => handleDeleteCampaign(campaign.id)}
+                              className="p-2 bg-red-600/20 hover:bg-red-600 border border-red-600/50 rounded-lg transition-colors group"
+                              title="Delete Campaign"
+                            >
+                              <Trash2 size={16} className="text-red-400 group-hover:text-white" />
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Overall Progress */}
-                        {obligationTypes.length > 0 && (
-                          <div className="mb-3">
-                            <div className="flex items-center justify-between text-sm mb-1">
-                              <span className="text-zinc-400">Overall Progress</span>
-                              <span className="font-bold text-cyan-400">{totalCompleted}/{totalRequired} posts ({overallProgress}%)</span>
-                            </div>
-                            <div className="w-full bg-zinc-700 rounded-full h-2">
-                              <div
-                                className="bg-gradient-to-r from-cyan-600 to-cyan-400 h-2 rounded-full transition-all duration-300"
-                                style={{ width: `${overallProgress}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Expand/Collapse Button */}
+                        {/* Expand/Collapse Button - More subtle */}
                         <button
                           onClick={() => setEditingSponsoredItem(isExpanded ? null : campaign.id)}
-                          className="w-full mt-2 py-2 bg-zinc-700/50 hover:bg-zinc-700 rounded-lg text-sm font-semibold transition-colors"
+                          className="w-full py-2 bg-zinc-700/30 hover:bg-zinc-700/50 rounded-lg text-xs font-semibold transition-colors text-zinc-400 hover:text-zinc-200 border border-zinc-700/50"
                           style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
                         >
-                          {isExpanded ? '▲ COLLAPSE DETAILS' : '▼ EXPAND DETAILS'}
+                          {isExpanded ? '▲ COLLAPSE' : '▼ VIEW DETAILS'}
                         </button>
                       </div>
 
